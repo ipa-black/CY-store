@@ -40,9 +40,10 @@ struct SourcesView: View {
     private func _importDefaultSources() {
         let myStoreSources = [
             // === المصادر المعتمدة للمتجر ===
-            "https://repository.apptesters.org",
-            "https://raw.githubusercontent.com/ipa-black/void-repo/refs/heads/main/repo.json",
-            "https://community-apps.sidestore.io/sidecommunity.json"
+            "https://raw.githubusercontent.com/ipa-black/ATTACK-repo/refs/heads/main/ATTACK.json",
+            "https://appiraq.com/ipasoon.json",
+            "https://community-apps.sidestore.io/sidecommunity.json",
+            "https://repository.apptesters.org"
         ]
         
         for source in myStoreSources {
