@@ -35,11 +35,20 @@ jobs:
           plutil -replace CFBundleName -string "ATTACK STORE" "$INFO_PLIST_PATH"
           plutil -replace CFBundleIdentifier -string "app.attackstore" "$INFO_PLIST_PATH"
 
-      - name: Install Firebase via CocoaPods
+      - name: Install Firebase via CocoaPods (Bundler Fix)
         run: |
-          # تحديث أداة CocoaPods لحل مشكلة 'map' for nil المرتبطة بملفات المشروع الحديثة
-          sudo gem install cocoapods xcodeproj
-
+          # 1. إنشاء ملف Gemfile لإجبار السيرفر على جلب أحدث إصدار قادر على قراءة مشروعك
+          cat <<EOF > Gemfile
+          source 'https://rubygems.org'
+          gem 'cocoapods'
+          gem 'xcodeproj', '>= 1.25.0'
+          EOF
+          
+          # 2. تثبيت الأدوات الحديثة محلياً لتجنب أخطاء الصلاحيات
+          bundle config set --local path 'vendor/bundle'
+          bundle install
+          
+          # 3. إنشاء ملف الـ Podfile
           cat <<EOF > Podfile
           platform :ios, '15.0'
           target 'Feather' do
@@ -49,8 +58,10 @@ jobs:
           end
           EOF
           
-          pod install --repo-update
+          # 4. تشغيل التثبيت باستخدام النسخة الحديثة التي جلبناها للتو (هذا السطر يحل المشكلة)
+          bundle exec pod install --repo-update
           
+          # 5. ربط المكتبات بنظام البناء
           if [ -f "Makefile" ]; then
             sed -i '' 's/-project Feather.xcodeproj/-workspace Feather.xcworkspace/g' Makefile || true
           fi
