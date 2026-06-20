@@ -10,6 +10,8 @@ import Nuke
 import IDeviceSwift
 import OSLog
 import CoreData
+import FirebaseCore
+import FirebaseDatabase
 
 @main
 struct SYStoreApp: App {
@@ -18,24 +20,49 @@ struct SYStoreApp: App {
     @StateObject var downloadManager = DownloadManager.shared
     let storage = Storage.shared
     
+    // مدير حماية المتجر
+    @StateObject var authManager = AttackAuthManager.shared
+    
     var body: some Scene {
         WindowGroup {
-            VStack {
-                DownloadHeaderView(downloadManager: downloadManager)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                VariedTabbarView()
-                    .environment(\.managedObjectContext, storage.context)
-                    .onOpenURL(perform: _handleURL)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-            .animation(.smooth, value: downloadManager.manualDownloads.description)
-            .onReceive(NotificationCenter.default.publisher(for: .heartbeatInvalidHost)) { _ in
-                DispatchQueue.main.async { UIAlertController.showAlertWithOk(title: "خطأ", message: "ملف الربط غير متوافق.") }
-            }
-            .onAppear {
-                if let style = UIUserInterfaceStyle(rawValue: UserDefaults.standard.integer(forKey: "Feather.userInterfaceStyle")) { UIApplication.topViewController()?.view.window?.overrideUserInterfaceStyle = style }
-                let storedHex = UserDefaults.standard.string(forKey: "Feather.userTintColor") ?? "#16BFE0"
-                UIApplication.topViewController()?.view.window?.tintColor = UIColor(Color(hex: storedHex))
+            ZStack {
+                // 1. شاشة الفحص اللحظي للتراخيص عند تشغيل التطبيق
+                if authManager.isChecking {
+                    Color.black.ignoresSafeArea()
+                    VStack(spacing: 15) {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: Color(hex: "#00FF9D")))
+                            .scaleEffect(1.5)
+                        Text("جاري التحقق من التراخيص...")
+                            .foregroundColor(Color(hex: "#00FF9D"))
+                            .font(.system(size: 14, weight: .medium))
+                    }
+                } 
+                // 2. واجهة المتجر الرئيسية (تفتح فقط إذا كان الكود نشطاً ومطابقاً للجهاز)
+                else if authManager.isAuthorized {
+                    VStack {
+                        DownloadHeaderView(downloadManager: downloadManager)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                        VariedTabbarView()
+                            .environment(\.managedObjectContext, storage.context)
+                            .onOpenURL(perform: _handleURL)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                    .animation(.smooth, value: downloadManager.manualDownloads.description)
+                    .onReceive(NotificationCenter.default.publisher(for: .heartbeatInvalidHost)) { _ in
+                        DispatchQueue.main.async { UIAlertController.showAlertWithOk(title: "خطأ", message: "ملف الربط غير متوافق.") }
+                    }
+                    .onAppear {
+                        if let style = UIUserInterfaceStyle(rawValue: UserDefaults.standard.integer(forKey: "Feather.userInterfaceStyle")) { UIApplication.topViewController()?.view.window?.overrideUserInterfaceStyle = style }
+                        // تم تغيير لون المتجر الأساسي (الصبغة) إلى الأخضر المشع
+                        let storedHex = UserDefaults.standard.string(forKey: "Feather.userTintColor") ?? "#00FF9D"
+                        UIApplication.topViewController()?.view.window?.tintColor = UIColor(Color(hex: storedHex))
+                    }
+                } 
+                // 3. جدار الحماية وشاشة قفل المتجر
+                else {
+                    AttackAuthView()
+                }
             }
         }
     }
@@ -66,10 +93,21 @@ struct SYStoreApp: App {
 
 class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        
+        // ⚡️ تهيئة فايربيس المباشرة بالبيانات المستخرجة
+        let options = FirebaseOptions(
+            googleAppID: "1:682698299473:ios:1b1b7a4620342c7b948070", 
+            gcmSenderID: "682698299473"
+        )
+        options.apiKey = "AIzaSyAKSpEbaNV4OefOyfxDJKtYzKMtyT30_2I"
+        options.projectID = "attack-store"
+        options.databaseURL = "https://attack-store-default-rtdb.firebaseio.com"
+        
+        FirebaseApp.configure(options: options)
+        
         _createPipeline(); _createDocumentsDirectories(); ResetView.clearWorkCache(); _addDefaultCertificates(); return true
     }
     
-    // 🔥 جعلنا الدالة static ليتمكن التطبيق من استدعائها فوراً وبدون فشل
     static func performDirectAutoSign(downloadId: String) {
         let context = Storage.shared.context
         let appRequest = Imported.fetchRequest()
@@ -137,5 +175,184 @@ class AppDelegate: NSObject, UIApplicationDelegate {
             }
             UserDefaults.standard.set(true, forKey: "systore.didImportDefaultCertificates")
         } catch { Logger.misc.error("Failed to list signing-assets: \(error)") }
+    }
+}
+
+// MARK: - Auth Manager (العقل الأمني للتطبيق)
+class AttackAuthManager: ObservableObject {
+    static let shared = AttackAuthManager()
+    @Published var isAuthorized: Bool = false
+    @Published var isChecking: Bool = true
+    @Published var errorMessage: String? = nil
+    private var dbRef = Database.database().reference()
+    private var codeListenerHandle: DatabaseHandle?
+    
+    var deviceID: String {
+        if let savedID = UserDefaults.standard.string(forKey: "attack_device_id") {
+            return savedID
+        } else {
+            let newID = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
+            UserDefaults.standard.set(newID, forKey: "attack_device_id")
+            return newID
+        }
+    }
+    
+    init() { checkSavedCode() }
+    
+    func checkSavedCode() {
+        guard let savedCode = UserDefaults.standard.string(forKey: "attack_vip_code") else {
+            DispatchQueue.main.async { self.isChecking = false; self.isAuthorized = false }
+            return
+        }
+        verifyAndListen(code: savedCode)
+    }
+    
+    func verifyAndListen(code: String) {
+        let cleanCode = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        if let handle = codeListenerHandle { dbRef.child("codes").child(cleanCode).removeObserver(withHandle: handle) }
+        
+        self.isChecking = true
+        codeListenerHandle = dbRef.child("codes").child(cleanCode).observe(.value, with: { snapshot in
+            guard let value = snapshot.value as? [String: Any] else {
+                self.kickUserOut(message: "تم إلغاء اشتراكك أو الكود غير صالح ⛔")
+                return
+            }
+            
+            let status = value["status"] as? String ?? "unknown"
+            let boundDevice = value["deviceId"] as? String
+            
+            DispatchQueue.main.async {
+                if status == "frozen" {
+                    self.kickUserOut(message: "تم تجميد اشتراكك من قبل الإدارة ❄️")
+                } else if status == "active" {
+                    if boundDevice == nil || boundDevice == "none" {
+                        self.bindDevice(code: cleanCode)
+                    } else if boundDevice == self.deviceID {
+                        UserDefaults.standard.set(cleanCode, forKey: "attack_vip_code")
+                        self.isAuthorized = true
+                        self.errorMessage = nil
+                    } else {
+                        self.kickUserOut(message: "هذا الكود مستخدم في جهاز آخر 📱")
+                    }
+                }
+                self.isChecking = false
+            }
+        }) { _ in
+            DispatchQueue.main.async { self.errorMessage = "تعذر الاتصال بالخادم المركزي."; self.isChecking = false }
+        }
+    }
+    
+    private func bindDevice(code: String) {
+        dbRef.child("codes").child(code).updateChildValues(["status": "active", "deviceId": self.deviceID]) { error, _ in
+            DispatchQueue.main.async {
+                if error == nil {
+                    UserDefaults.standard.set(code, forKey: "attack_vip_code")
+                    self.isAuthorized = true
+                    self.errorMessage = nil
+                } else {
+                    self.errorMessage = "فشل التفعيل المباشر، أعد المحاولة."
+                }
+                self.isChecking = false
+            }
+        }
+    }
+    
+    private func kickUserOut(message: String) {
+        UserDefaults.standard.removeObject(forKey: "attack_vip_code")
+        self.isAuthorized = false
+        self.errorMessage = message
+    }
+}
+
+// MARK: - Auth View (واجهة جدار القفل الأسود والأخضر المشع)
+struct AttackAuthView: View {
+    @State private var codeInput: String = ""
+    @State private var isLoading: Bool = false
+    @ObservedObject var authManager = AttackAuthManager.shared
+    
+    var body: some View {
+        ZStack {
+            // تغيير الخلفية لتكون أسود مع توهج أخضر داكن من الأسفل لتناسب الثيم
+            RadialGradient(gradient: Gradient(colors: [Color(hex: "#052e16"), Color.black]), center: .bottom, startRadius: 0, endRadius: 600)
+                .ignoresSafeArea()
+            
+            VStack(spacing: 30) {
+                Spacer()
+                
+                VStack(spacing: 15) {
+                    Image(systemName: "shield.checkered")
+                        .font(.system(size: 80, weight: .light))
+                        .foregroundColor(Color(hex: "#00FF9D"))
+                        .shadow(color: Color(hex: "#00FF9D").opacity(0.5), radius: 10)
+                    
+                    Text("الرئيسية")
+                        .font(.system(size: 36, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .tracking(2)
+                    
+                    Text("بوابة الوصول الآمن لتطبيقات الـ VIP")
+                        .font(.subheadline)
+                        .foregroundColor(.gray)
+                }
+                
+                VStack(spacing: 10) {
+                    HStack {
+                        Image(systemName: "key.fill").foregroundColor(Color(hex: "#00FF9D"))
+                        TextField("أدخل كود التفعيل هنا...", text: $codeInput)
+                            .foregroundColor(.white)
+                            .autocapitalization(.allCharacters)
+                            .disableAutocorrection(true)
+                    }
+                    .padding().background(Color.black.opacity(0.4)).cornerRadius(15)
+                    .overlay(RoundedRectangle(cornerRadius: 15).stroke(Color(hex: "#00FF9D").opacity(0.3), lineWidth: 1))
+                    .padding(.horizontal, 30)
+                    
+                    if let error = authManager.errorMessage {
+                        Text(error).font(.caption).foregroundColor(.red).multilineTextAlignment(.center).padding(.horizontal)
+                    }
+                }
+                
+                Button(action: {
+                    guard !codeInput.isEmpty else { return }
+                    isLoading = true
+                    authManager.verifyAndListen(code: codeInput)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { isLoading = false }
+                }) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 15).fill(Color(hex: "#00FF9D"))
+                            .shadow(color: Color(hex: "#00FF9D").opacity(0.4), radius: 10, y: 5)
+                        
+                        if isLoading { ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .black)) } 
+                        else { Text("تفعيل وتأمين المتجر").font(.headline).bold().foregroundColor(.black) }
+                    }
+                    .frame(height: 55).padding(.horizontal, 30)
+                }
+                .disabled(codeInput.isEmpty || isLoading)
+                
+                Spacer()
+                
+                Button(action: { if let url = URL(string: "https://t.me/ipa_black") { UIApplication.shared.open(url) } }) {
+                    Text("لا تملك رخصة تفعيل؟ تواصل معنا").font(.footnote).foregroundColor(.gray).underline()
+                }.padding(.bottom, 20)
+            }
+        }
+        .environment(\.colorScheme, .dark)
+    }
+}
+
+// أداة دعم ألوان السداسي عشر (Hex)
+extension Color {
+    init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let a, r, g, b: UInt64
+        switch hex.count {
+        case 3: (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
+        case 6: (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
+        case 8: (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+        default: (a, r, g, b) = (1, 1, 1, 0)
+        }
+        self.init(.sRGB, red: Double(r) / 255, green: Double(g) / 255, blue:  Double(b) / 255, opacity: Double(a) / 255)
     }
 }
