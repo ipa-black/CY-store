@@ -35,16 +35,18 @@ jobs:
           plutil -replace CFBundleName -string "ATTACK STORE" "$INFO_PLIST_PATH"
           plutil -replace CFBundleIdentifier -string "app.attackstore" "$INFO_PLIST_PATH"
 
-      - name: Install Firebase via CocoaPods (Bundler Fix)
+      - name: Install Firebase via CocoaPods (Xcode 16 Fix)
         run: |
-          # 1. إنشاء ملف Gemfile لإجبار السيرفر على جلب أحدث إصدار قادر على قراءة مشروعك
+          echo "Setting up Bundler to bypass CocoaPods crash..."
+          
+          # 1. إجبار السيرفر على استخدام التحديث 1.26.0 الذي يحل مشكلة Xcode 16 تماماً
           cat <<EOF > Gemfile
           source 'https://rubygems.org'
-          gem 'cocoapods'
-          gem 'xcodeproj', '>= 1.25.0'
+          gem 'cocoapods', '~> 1.16.2'
+          gem 'xcodeproj', '>= 1.26.0'
           EOF
           
-          # 2. تثبيت الأدوات الحديثة محلياً لتجنب أخطاء الصلاحيات
+          # 2. تثبيت الأدوات محلياً داخل السيرفر لتجنب مشاكل الصلاحيات
           bundle config set --local path 'vendor/bundle'
           bundle install
           
@@ -58,10 +60,10 @@ jobs:
           end
           EOF
           
-          # 4. تشغيل التثبيت باستخدام النسخة الحديثة التي جلبناها للتو (هذا السطر يحل المشكلة)
+          # 4. تشغيل التثبيت باستخدام النسخة المحدثة (bundle exec هي سر النجاح هنا)
           bundle exec pod install --repo-update
           
-          # 5. ربط المكتبات بنظام البناء
+          # 5. ربط المكتبات بنظام البناء الخاص بمشروعك
           if [ -f "Makefile" ]; then
             sed -i '' 's/-project Feather.xcodeproj/-workspace Feather.xcworkspace/g' Makefile || true
           fi
