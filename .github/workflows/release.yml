@@ -1,4 +1,4 @@
-name: Beta Build and Release
+Name: Beta Build and Release
 
 on:
   workflow_dispatch:
@@ -26,33 +26,41 @@ jobs:
         run: |
           INFO_PLIST_PATH="Feather/Resources/Info.plist"
           if [ ! -f "$INFO_PLIST_PATH" ]; then
-            echo "Error: Info.plist not found at $INFO_PLIST_PATH. Please verify the path."
+            echo "Error: Info.plist not found at $INFO_PLIST_PATH."
             exit 1
           fi
 
-          echo "Modifying Info.plist at: $INFO_PLIST_PATH"
-          plutil -replace CFBundleDisplayName -string "ATTACK STORE" "$INFO_PLIST_PATH"
+          echo "Modifying Info.plist..."
+          # تعديل اسم العرض ليكون "الرئيسية" بناءً على الهيكلة المعتمدة
+          plutil -replace CFBundleDisplayName -string "الرئيسية" "$INFO_PLIST_PATH"
           plutil -replace CFBundleName -string "ATTACK STORE" "$INFO_PLIST_PATH"
           plutil -replace CFBundleIdentifier -string "app.attackstore" "$INFO_PLIST_PATH"
-          echo "App name and Bundle ID updated successfully."
+
+      - name: Install Firebase via CocoaPods (Auto-Generated)
+        run: |
+          # إنشاء ملف Podfile برمجياً لتثبيت فايربيس
+          cat <<EOF > Podfile
+          platform :ios, '15.0'
+          target 'Feather' do
+            use_frameworks!
+            pod 'FirebaseCore'
+            pod 'FirebaseDatabase'
+          end
+          EOF
+          pod install
+          
+          # تعديل الـ Makefile ليستخدم الـ Workspace بدلاً من Project لضمان قراءة فايربيس
+          if [ -f "Makefile" ]; then
+            sed -i '' 's/-project Feather.xcodeproj/-workspace Feather.xcworkspace/g' Makefile || true
+          fi
 
       - name: Set iOS 15 Deployment Target
         run: |
           INFO_PLIST_PATH="Feather/Resources/Info.plist"
-          echo "Updating deployment targets to iOS 15.0..."
-          
-          # 1. تحديث MinimumOSVersion في ملف Info.plist بشكل آمن
           if [ -f "$INFO_PLIST_PATH" ]; then
             plutil -replace MinimumOSVersion -string "15.0" "$INFO_PLIST_PATH" || true
           fi
-          
-          # 2. تحديث إعدادات Xcode ببحث دقيق يستهدف الأرقام فقط لمنع تدمير المتغيرات
           find . -name "project.pbxproj" -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]*\.[0-9]*;/IPHONEOS_DEPLOYMENT_TARGET = 15.0;/g' {} +
-          
-          # 3. تحديث Package.swift (إن وجد) بشكل دقيق
-          if [ -f "Package.swift" ]; then
-            sed -i '' 's/\.iOS(.v[0-9]*)/\.iOS(.v15)/g' Package.swift || true
-          fi
 
       - name: Update Version with agvtool
         run: |
@@ -60,7 +68,6 @@ jobs:
 
       - name: Build and Verify
         run: |
-          # تمرير إصدار iOS كمتغير بيئة مباشر لتجنب أي أخطاء من xcodebuild
           export IPHONEOS_DEPLOYMENT_TARGET=15.0
           make iphoneos
           mkdir -p upload
@@ -78,21 +85,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          LATEST_OFFICIAL_TAG=$(git ls-remote --tags --refs origin "v*" | awk -F/ '{print $3}' | sort -V | tail -1 || echo "")
-          COMMIT_MSG=$(git log -1 --pretty=%B)
-
-          NOTES="## Commit: \`$COMMIT_MSG\` (${{ github.sha }})"
-          if [ -n "$LATEST_OFFICIAL_TAG" ]; then
-            NOTES+=$'\n'"### New compared to $LATEST_OFFICIAL_TAG:"
-            NOTES+=$'\n'"[View full changes](https://github.com/${{ github.repository }}/compare/${LATEST_OFFICIAL_TAG}...${{ github.sha }})"
-          else
-            NOTES+=$'\n'"### Initial beta build"
-          fi
-
           NEW_TAG="beta-${{ github.run_number }}"
-
           gh release create "$NEW_TAG" "upload/*.ipa" \
             --title "ATTACK STORE v${{ env.VERSION }}" \
-            --notes "$NOTES" \
+            --notes "### Attack Store Auto Build\nCommit: \`${{ github.sha }}\`" \
             --prerelease \
             --target ${{ github.sha }}
