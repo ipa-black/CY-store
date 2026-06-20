@@ -2,8 +2,6 @@
 //  SYStoreApp.swift
 //  SY STORE
 //
-//  Created by samara on 10.04.2025.
-//
 
 import SwiftUI
 import Nuke
@@ -19,34 +17,21 @@ struct SYStoreApp: App {
     let heartbeat = HeartbeatManager.shared
     @StateObject var downloadManager = DownloadManager.shared
     let storage = Storage.shared
-    
-    // مدير حماية المتجر
     @StateObject var authManager = AttackAuthManager.shared
     
     var body: some Scene {
         WindowGroup {
             ZStack {
-                // 1. شاشة الفحص اللحظي للتراخيص عند تشغيل التطبيق
                 if authManager.isChecking {
                     Color.black.ignoresSafeArea()
                     VStack(spacing: 15) {
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: Color(hex: "#00FF9D")))
-                            .scaleEffect(1.5)
-                        Text("جاري التحقق من التراخيص...")
-                            .foregroundColor(Color(hex: "#00FF9D"))
-                            .font(.system(size: 14, weight: .medium))
+                        ProgressView().progressViewStyle(CircularProgressViewStyle(tint: Color(hex: "#00FF9D"))).scaleEffect(1.5)
+                        Text("جاري التحقق من التراخيص...").foregroundColor(Color(hex: "#00FF9D")).font(.system(size: 14, weight: .medium))
                     }
-                } 
-                // 2. واجهة المتجر الرئيسية (تفتح فقط إذا كان الكود نشطاً ومطابقاً للجهاز)
-                else if authManager.isAuthorized {
+                } else if authManager.isAuthorized {
                     VStack {
-                        DownloadHeaderView(downloadManager: downloadManager)
-                            .transition(.move(edge: .top).combined(with: .opacity))
-                        VariedTabbarView()
-                            .environment(\.managedObjectContext, storage.context)
-                            .onOpenURL(perform: _handleURL)
-                            .transition(.move(edge: .top).combined(with: .opacity))
+                        DownloadHeaderView(downloadManager: downloadManager).transition(.move(edge: .top).combined(with: .opacity))
+                        VariedTabbarView().environment(\.managedObjectContext, storage.context).onOpenURL(perform: _handleURL).transition(.move(edge: .top).combined(with: .opacity))
                     }
                     .animation(.smooth, value: downloadManager.manualDownloads.description)
                     .onReceive(NotificationCenter.default.publisher(for: .heartbeatInvalidHost)) { _ in
@@ -54,13 +39,10 @@ struct SYStoreApp: App {
                     }
                     .onAppear {
                         if let style = UIUserInterfaceStyle(rawValue: UserDefaults.standard.integer(forKey: "Feather.userInterfaceStyle")) { UIApplication.topViewController()?.view.window?.overrideUserInterfaceStyle = style }
-                        // تم تغيير لون المتجر الأساسي (الصبغة) إلى الأخضر المشع
                         let storedHex = UserDefaults.standard.string(forKey: "Feather.userTintColor") ?? "#00FF9D"
                         UIApplication.topViewController()?.view.window?.tintColor = UIColor(Color(hex: storedHex))
                     }
-                } 
-                // 3. جدار الحماية وشاشة قفل المتجر
-                else {
+                } else {
                     AttackAuthView()
                 }
             }
@@ -93,18 +75,11 @@ struct SYStoreApp: App {
 
 class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
-        
-        // ⚡️ تهيئة فايربيس المباشرة بالبيانات المستخرجة
-        let options = FirebaseOptions(
-            googleAppID: "1:682698299473:ios:1b1b7a4620342c7b948070", 
-            gcmSenderID: "682698299473"
-        )
+        let options = FirebaseOptions(googleAppID: "1:682698299473:ios:1b1b7a4620342c7b948070", gcmSenderID: "682698299473")
         options.apiKey = "AIzaSyAKSpEbaNV4OefOyfxDJKtYzKMtyT30_2I"
         options.projectID = "attack-store"
         options.databaseURL = "https://attack-store-default-rtdb.firebaseio.com"
-        
         FirebaseApp.configure(options: options)
-        
         _createPipeline(); _createDocumentsDirectories(); ResetView.clearWorkCache(); _addDefaultCertificates(); return true
     }
     
@@ -113,32 +88,17 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         let appRequest = Imported.fetchRequest()
         appRequest.sortDescriptors = [NSSortDescriptor(keyPath: \Imported.date, ascending: false)]
         appRequest.fetchLimit = 1
-        
-        guard let latestApp = try? context.fetch(appRequest).first else {
-            DispatchQueue.main.async { DownloadManager.shared.removeDownload(id: downloadId) }
-            return
-        }
-        
+        guard let latestApp = try? context.fetch(appRequest).first else { DispatchQueue.main.async { DownloadManager.shared.removeDownload(id: downloadId) }; return }
         let certRequest = CertificatePair.fetchRequest()
         certRequest.sortDescriptors = [NSSortDescriptor(keyPath: \CertificatePair.date, ascending: false)]
-        guard let certs = try? context.fetch(certRequest), !certs.isEmpty else {
-            DispatchQueue.main.async {
-                DownloadManager.shared.removeDownload(id: downloadId)
-                UIAlertController.showAlertWithOk(title: "تنبيه", message: "لا توجد شهادة لتوقيعه تلقائياً.")
-            }
-            return
-        }
-        
+        guard let certs = try? context.fetch(certRequest), !certs.isEmpty else { DispatchQueue.main.async { DownloadManager.shared.removeDownload(id: downloadId); UIAlertController.showAlertWithOk(title: "تنبيه", message: "لا توجد شهادة لتوقيعه تلقائياً.") }; return }
         let selectedIndex = UserDefaults.standard.integer(forKey: "feather.selectedCert")
         let cert = certs.indices.contains(selectedIndex) ? certs[selectedIndex] : certs.first!
         let options = OptionsManager.shared.options
-        
         FR.signPackageFile(latestApp, using: options, icon: nil, certificate: cert) { error in
             DispatchQueue.main.async {
                 DownloadManager.shared.removeDownload(id: downloadId)
-                if let error = error {
-                    UIAlertController.showAlertWithOk(title: "فشل التوقيع", message: error.localizedDescription)
-                } else {
+                if let error = error { UIAlertController.showAlertWithOk(title: "فشل التوقيع", message: error.localizedDescription) } else {
                     if options.post_deleteAppAfterSigned { Storage.shared.deleteApp(for: latestApp) }
                     NotificationCenter.default.post(name: Notification.Name("SYStore.installApp"), object: nil)
                 }
@@ -178,7 +138,6 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     }
 }
 
-// MARK: - Auth Manager (العقل الأمني للتطبيق)
 class AttackAuthManager: ObservableObject {
     static let shared = AttackAuthManager()
     @Published var isAuthorized: Bool = false
@@ -188,22 +147,16 @@ class AttackAuthManager: ObservableObject {
     private var codeListenerHandle: DatabaseHandle?
     
     var deviceID: String {
-        if let savedID = UserDefaults.standard.string(forKey: "attack_device_id") {
-            return savedID
-        } else {
+        if let savedID = UserDefaults.standard.string(forKey: "attack_device_id") { return savedID } else {
             let newID = UIDevice.current.identifierForVendor?.uuidString ?? UUID().uuidString
-            UserDefaults.standard.set(newID, forKey: "attack_device_id")
-            return newID
+            UserDefaults.standard.set(newID, forKey: "attack_device_id"); return newID
         }
     }
     
     init() { checkSavedCode() }
     
     func checkSavedCode() {
-        guard let savedCode = UserDefaults.standard.string(forKey: "attack_vip_code") else {
-            DispatchQueue.main.async { self.isChecking = false; self.isAuthorized = false }
-            return
-        }
+        guard let savedCode = UserDefaults.standard.string(forKey: "attack_vip_code") else { DispatchQueue.main.async { self.isChecking = false; self.isAuthorized = false }; return }
         verifyAndListen(code: savedCode)
     }
     
@@ -213,58 +166,36 @@ class AttackAuthManager: ObservableObject {
         
         self.isChecking = true
         codeListenerHandle = dbRef.child("codes").child(cleanCode).observe(.value, with: { snapshot in
-            guard let value = snapshot.value as? [String: Any] else {
-                self.kickUserOut(message: "تم إلغاء اشتراكك أو الكود غير صالح ⛔")
-                return
-            }
+            guard let value = snapshot.value as? [String: Any] else { self.kickUserOut(message: "تم إلغاء اشتراكك أو الكود غير صالح ⛔"); return }
             
             let status = value["status"] as? String ?? "unknown"
             let boundDevice = value["deviceId"] as? String
             
             DispatchQueue.main.async {
-                if status == "frozen" {
-                    self.kickUserOut(message: "تم تجميد اشتراكك من قبل الإدارة ❄️")
-                } else if status == "active" {
-                    if boundDevice == nil || boundDevice == "none" {
-                        self.bindDevice(code: cleanCode)
-                    } else if boundDevice == self.deviceID {
-                        UserDefaults.standard.set(cleanCode, forKey: "attack_vip_code")
-                        self.isAuthorized = true
-                        self.errorMessage = nil
-                    } else {
-                        self.kickUserOut(message: "هذا الكود مستخدم في جهاز آخر 📱")
-                    }
+                if status == "frozen" { self.kickUserOut(message: "تم تجميد اشتراكك من الإدارة ❄️") } else if status == "active" {
+                    if boundDevice == nil || boundDevice == "none" { self.bindDevice(code: cleanCode) } else if boundDevice == self.deviceID {
+                        UserDefaults.standard.set(cleanCode, forKey: "attack_vip_code"); self.isAuthorized = true; self.errorMessage = nil
+                    } else { self.kickUserOut(message: "هذا الكود مستخدم في جهاز آخر 📱") }
                 }
                 self.isChecking = false
             }
-        }) { _ in
-            DispatchQueue.main.async { self.errorMessage = "تعذر الاتصال بالخادم المركزي."; self.isChecking = false }
-        }
+        }) { _ in DispatchQueue.main.async { self.errorMessage = "تعذر الاتصال بالخادم المركزي."; self.isChecking = false } }
     }
     
     private func bindDevice(code: String) {
         dbRef.child("codes").child(code).updateChildValues(["status": "active", "deviceId": self.deviceID]) { error, _ in
             DispatchQueue.main.async {
-                if error == nil {
-                    UserDefaults.standard.set(code, forKey: "attack_vip_code")
-                    self.isAuthorized = true
-                    self.errorMessage = nil
-                } else {
-                    self.errorMessage = "فشل التفعيل المباشر، أعد المحاولة."
-                }
+                if error == nil { UserDefaults.standard.set(code, forKey: "attack_vip_code"); self.isAuthorized = true; self.errorMessage = nil } else { self.errorMessage = "فشل التفعيل المباشر، أعد المحاولة." }
                 self.isChecking = false
             }
         }
     }
     
     private func kickUserOut(message: String) {
-        UserDefaults.standard.removeObject(forKey: "attack_vip_code")
-        self.isAuthorized = false
-        self.errorMessage = message
+        UserDefaults.standard.removeObject(forKey: "attack_vip_code"); self.isAuthorized = false; self.errorMessage = message
     }
 }
 
-// MARK: - Auth View (واجهة جدار القفل الأسود والأخضر المشع)
 struct AttackAuthView: View {
     @State private var codeInput: String = ""
     @State private var isLoading: Bool = false
@@ -272,80 +203,41 @@ struct AttackAuthView: View {
     
     var body: some View {
         ZStack {
-            // تغيير الخلفية لتكون أسود مع توهج أخضر داكن من الأسفل لتناسب الثيم
-            RadialGradient(gradient: Gradient(colors: [Color(hex: "#052e16"), Color.black]), center: .bottom, startRadius: 0, endRadius: 600)
-                .ignoresSafeArea()
-            
+            RadialGradient(gradient: Gradient(colors: [Color(hex: "#052e16"), Color.black]), center: .bottom, startRadius: 0, endRadius: 600).ignoresSafeArea()
             VStack(spacing: 30) {
                 Spacer()
-                
                 VStack(spacing: 15) {
-                    Image(systemName: "shield.checkered")
-                        .font(.system(size: 80, weight: .light))
-                        .foregroundColor(Color(hex: "#00FF9D"))
-                        .shadow(color: Color(hex: "#00FF9D").opacity(0.5), radius: 10)
-                    
-                    Text("الرئيسية")
-                        .font(.system(size: 36, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .tracking(2)
-                    
-                    Text("بوابة الوصول الآمن لتطبيقات الـ VIP")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
+                    Image(systemName: "shield.checkered").font(.system(size: 80, weight: .light)).foregroundColor(Color(hex: "#00FF9D")).shadow(color: Color(hex: "#00FF9D").opacity(0.5), radius: 10)
+                    Text("الرئيسية").font(.system(size: 36, weight: .bold, design: .rounded)).foregroundColor(.white).tracking(2)
+                    Text("بوابة الوصول الآمن لتطبيقات الـ VIP").font(.subheadline).foregroundColor(.gray)
                 }
-                
                 VStack(spacing: 10) {
                     HStack {
                         Image(systemName: "key.fill").foregroundColor(Color(hex: "#00FF9D"))
-                        TextField("أدخل كود التفعيل هنا...", text: $codeInput)
-                            .foregroundColor(.white)
-                            .autocapitalization(.allCharacters)
-                            .disableAutocorrection(true)
-                    }
-                    .padding().background(Color.black.opacity(0.4)).cornerRadius(15)
-                    .overlay(RoundedRectangle(cornerRadius: 15).stroke(Color(hex: "#00FF9D").opacity(0.3), lineWidth: 1))
-                    .padding(.horizontal, 30)
-                    
-                    if let error = authManager.errorMessage {
-                        Text(error).font(.caption).foregroundColor(.red).multilineTextAlignment(.center).padding(.horizontal)
-                    }
+                        TextField("أدخل كود التفعيل هنا...", text: $codeInput).foregroundColor(.white).autocapitalization(.allCharacters).disableAutocorrection(true)
+                    }.padding().background(Color.black.opacity(0.4)).cornerRadius(15).overlay(RoundedRectangle(cornerRadius: 15).stroke(Color(hex: "#00FF9D").opacity(0.3), lineWidth: 1)).padding(.horizontal, 30)
+                    if let error = authManager.errorMessage { Text(error).font(.caption).foregroundColor(.red).multilineTextAlignment(.center).padding(.horizontal) }
                 }
-                
                 Button(action: {
                     guard !codeInput.isEmpty else { return }
-                    isLoading = true
-                    authManager.verifyAndListen(code: codeInput)
+                    isLoading = true; authManager.verifyAndListen(code: codeInput)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) { isLoading = false }
                 }) {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 15).fill(Color(hex: "#00FF9D"))
-                            .shadow(color: Color(hex: "#00FF9D").opacity(0.4), radius: 10, y: 5)
-                        
-                        if isLoading { ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .black)) } 
-                        else { Text("تفعيل وتأمين المتجر").font(.headline).bold().foregroundColor(.black) }
-                    }
-                    .frame(height: 55).padding(.horizontal, 30)
-                }
-                .disabled(codeInput.isEmpty || isLoading)
-                
+                        RoundedRectangle(cornerRadius: 15).fill(Color(hex: "#00FF9D")).shadow(color: Color(hex: "#00FF9D").opacity(0.4), radius: 10, y: 5)
+                        if isLoading { ProgressView().progressViewStyle(CircularProgressViewStyle(tint: .black)) } else { Text("تفعيل وتأمين المتجر").font(.headline).bold().foregroundColor(.black) }
+                    }.frame(height: 55).padding(.horizontal, 30)
+                }.disabled(codeInput.isEmpty || isLoading)
                 Spacer()
-                
-                Button(action: { if let url = URL(string: "https://t.me/ipa_black") { UIApplication.shared.open(url) } }) {
-                    Text("لا تملك رخصة تفعيل؟ تواصل معنا").font(.footnote).foregroundColor(.gray).underline()
-                }.padding(.bottom, 20)
+                Button(action: { if let url = URL(string: "https://t.me/ipa_black") { UIApplication.shared.open(url) } }) { Text("لا تملك رخصة تفعيل؟ تواصل معنا").font(.footnote).foregroundColor(.gray).underline() }.padding(.bottom, 20)
             }
-        }
-        .environment(\.colorScheme, .dark)
+        }.environment(\.colorScheme, .dark)
     }
 }
 
-// أداة دعم ألوان السداسي عشر (Hex)
 extension Color {
     init(hex: String) {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted); var int: UInt64 = 0; Scanner(string: hex).scanHexInt64(&int)
         let a, r, g, b: UInt64
         switch hex.count {
         case 3: (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
