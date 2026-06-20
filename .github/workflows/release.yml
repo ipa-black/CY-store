@@ -9,7 +9,7 @@ permissions:
 jobs:
   build:
     name: Build, Modify, and Release Beta
-    runs-on: macos-26
+    runs-on: macos-latest
 
     steps:
       - name: Checkout Code
@@ -18,62 +18,23 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
-      - name: Use Xcode 26.2
-        run: |
-          sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
-
       - name: Modify App Info (Name and Bundle ID)
         run: |
           INFO_PLIST_PATH="Feather/Resources/Info.plist"
           if [ ! -f "$INFO_PLIST_PATH" ]; then
-            echo "Error: Info.plist not found at $INFO_PLIST_PATH."
+            echo "Error: Info.plist not found."
             exit 1
           fi
 
           echo "Modifying Info.plist..."
-          plutil -replace CFBundleDisplayName -string "الرئيسية" "$INFO_PLIST_PATH"
-          plutil -replace CFBundleName -string "ATTACK STORE" "$INFO_PLIST_PATH"
-          plutil -replace CFBundleIdentifier -string "app.attackstore" "$INFO_PLIST_PATH"
-
-      - name: Install Firebase via CocoaPods (Xcode 16 Fix)
-        run: |
-          echo "Setting up Bundler to bypass CocoaPods crash..."
-          
-          # 1. إجبار السيرفر على استخدام التحديث 1.26.0 الذي يحل مشكلة Xcode 16 تماماً
-          cat <<EOF > Gemfile
-          source 'https://rubygems.org'
-          gem 'cocoapods', '~> 1.16.2'
-          gem 'xcodeproj', '>= 1.26.0'
-          EOF
-          
-          # 2. تثبيت الأدوات محلياً داخل السيرفر لتجنب مشاكل الصلاحيات
-          bundle config set --local path 'vendor/bundle'
-          bundle install
-          
-          # 3. إنشاء ملف الـ Podfile
-          cat <<EOF > Podfile
-          platform :ios, '15.0'
-          target 'Feather' do
-            use_frameworks!
-            pod 'FirebaseCore'
-            pod 'FirebaseDatabase'
-          end
-          EOF
-          
-          # 4. تشغيل التثبيت باستخدام النسخة المحدثة (bundle exec هي سر النجاح هنا)
-          bundle exec pod install --repo-update
-          
-          # 5. ربط المكتبات بنظام البناء الخاص بمشروعك
-          if [ -f "Makefile" ]; then
-            sed -i '' 's/-project Feather.xcodeproj/-workspace Feather.xcworkspace/g' Makefile || true
-          fi
+          plutil -replace CFBundleDisplayName -string "الرئيسية" "$INFO_PLIST_PATH" || true
+          plutil -replace CFBundleName -string "ATTACK STORE" "$INFO_PLIST_PATH" || true
+          plutil -replace CFBundleIdentifier -string "app.attackstore" "$INFO_PLIST_PATH" || true
 
       - name: Set iOS 15 Deployment Target
         run: |
           INFO_PLIST_PATH="Feather/Resources/Info.plist"
-          if [ -f "$INFO_PLIST_PATH" ]; then
-            plutil -replace MinimumOSVersion -string "15.0" "$INFO_PLIST_PATH" || true
-          fi
+          plutil -replace MinimumOSVersion -string "15.0" "$INFO_PLIST_PATH" || true
           find . -name "project.pbxproj" -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]*\.[0-9]*;/IPHONEOS_DEPLOYMENT_TARGET = 15.0;/g' {} +
 
       - name: Update Version with agvtool
@@ -102,6 +63,6 @@ jobs:
           NEW_TAG="beta-${{ github.run_number }}"
           gh release create "$NEW_TAG" "upload/*.ipa" \
             --title "ATTACK STORE v${{ env.VERSION }}" \
-            --notes "### Attack Store Auto Build\nCommit: \`${{ github.sha }}\`" \
+            --notes "### ATTACK STORE Auto Build\nCommit: \`${{ github.sha }}\`" \
             --prerelease \
             --target ${{ github.sha }}
