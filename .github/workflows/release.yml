@@ -31,14 +31,15 @@ jobs:
           fi
 
           echo "Modifying Info.plist..."
-          # تعديل اسم العرض ليكون "الرئيسية" بناءً على الهيكلة المعتمدة
           plutil -replace CFBundleDisplayName -string "الرئيسية" "$INFO_PLIST_PATH"
           plutil -replace CFBundleName -string "ATTACK STORE" "$INFO_PLIST_PATH"
           plutil -replace CFBundleIdentifier -string "app.attackstore" "$INFO_PLIST_PATH"
 
-      - name: Install Firebase via CocoaPods (Auto-Generated)
+      - name: Install Firebase via CocoaPods
         run: |
-          # إنشاء ملف Podfile برمجياً لتثبيت فايربيس
+          # تحديث أداة CocoaPods لحل مشكلة 'map' for nil المرتبطة بملفات المشروع الحديثة
+          sudo gem install cocoapods xcodeproj
+
           cat <<EOF > Podfile
           platform :ios, '15.0'
           target 'Feather' do
@@ -47,9 +48,9 @@ jobs:
             pod 'FirebaseDatabase'
           end
           EOF
-          pod install
           
-          # تعديل الـ Makefile ليستخدم الـ Workspace بدلاً من Project لضمان قراءة فايربيس
+          pod install --repo-update
+          
           if [ -f "Makefile" ]; then
             sed -i '' 's/-project Feather.xcodeproj/-workspace Feather.xcworkspace/g' Makefile || true
           fi
