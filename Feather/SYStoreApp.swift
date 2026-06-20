@@ -8,8 +8,7 @@ import Nuke
 import IDeviceSwift
 import OSLog
 import CoreData
-import FirebaseCore
-import FirebaseDatabase
+// 💡 تم حذف مكتبات فايربيس بالكامل! التطبيق الآن يعتمد على لغة Swift النقية.
 
 @main
 struct SYStoreApp: App {
@@ -17,6 +16,7 @@ struct SYStoreApp: App {
     let heartbeat = HeartbeatManager.shared
     @StateObject var downloadManager = DownloadManager.shared
     let storage = Storage.shared
+    
     @StateObject var authManager = AttackAuthManager.shared
     
     var body: some Scene {
@@ -75,11 +75,6 @@ struct SYStoreApp: App {
 
 class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
-        let options = FirebaseOptions(googleAppID: "1:682698299473:ios:1b1b7a4620342c7b948070", gcmSenderID: "682698299473")
-        options.apiKey = "AIzaSyAKSpEbaNV4OefOyfxDJKtYzKMtyT30_2I"
-        options.projectID = "attack-store"
-        options.databaseURL = "https://attack-store-default-rtdb.firebaseio.com"
-        FirebaseApp.configure(options: options)
         _createPipeline(); _createDocumentsDirectories(); ResetView.clearWorkCache(); _addDefaultCertificates(); return true
     }
     
@@ -138,13 +133,16 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     }
 }
 
+// MARK: - Auth Manager (مبرمج بـ REST API للسرعة وبدون مكتبات)
 class AttackAuthManager: ObservableObject {
     static let shared = AttackAuthManager()
     @Published var isAuthorized: Bool = false
     @Published var isChecking: Bool = true
     @Published var errorMessage: String? = nil
-    private var dbRef = Database.database().reference()
-    private var codeListenerHandle: DatabaseHandle?
+    
+    private var pollingTimer: Timer?
+    // رابط قاعدتك المباشر
+    private let dbURL = "https://attack-store-default-rtdb.firebaseio.com/codes"
     
     var deviceID: String {
         if let savedID = UserDefaults.standard.string(forKey: "attack_device_id") { return savedID } else {
@@ -156,46 +154,113 @@ class AttackAuthManager: ObservableObject {
     init() { checkSavedCode() }
     
     func checkSavedCode() {
-        guard let savedCode = UserDefaults.standard.string(forKey: "attack_vip_code") else { DispatchQueue.main.async { self.isChecking = false; self.isAuthorized = false }; return }
-        verifyAndListen(code: savedCode)
+        guard let savedCode = UserDefaults.standard.string(forKey: "attack_vip_code") else {
+            DispatchQueue.main.async { self.isChecking = false; self.isAuthorized = false }
+            return
+        }
+        verifyCode(code: savedCode)
     }
     
-    func verifyAndListen(code: String) {
+    func verifyCode(code: String) {
         let cleanCode = code.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        if let handle = codeListenerHandle { dbRef.child("codes").child(cleanCode).removeObserver(withHandle: handle) }
-        
         self.isChecking = true
-        codeListenerHandle = dbRef.child("codes").child(cleanCode).observe(.value, with: { snapshot in
-            guard let value = snapshot.value as? [String: Any] else { self.kickUserOut(message: "تم إلغاء اشتراكك أو الكود غير صالح ⛔"); return }
-            
-            let status = value["status"] as? String ?? "unknown"
-            let boundDevice = value["deviceId"] as? String
-            
+        self.errorMessage = nil
+        
+        guard let url = URL(string: "\(dbURL)/\(cleanCode).json") else { return }
+        
+        URLSession.shared.dataTask(with: url) { data, response, error in
             DispatchQueue.main.async {
-                if status == "frozen" { self.kickUserOut(message: "تم تجميد اشتراكك من الإدارة ❄️") } else if status == "active" {
-                    if boundDevice == nil || boundDevice == "none" { self.bindDevice(code: cleanCode) } else if boundDevice == self.deviceID {
-                        UserDefaults.standard.set(cleanCode, forKey: "attack_vip_code"); self.isAuthorized = true; self.errorMessage = nil
-                    } else { self.kickUserOut(message: "هذا الكود مستخدم في جهاز آخر 📱") }
+                guard let data = data, error == nil else {
+                    self.kickUserOut(message: "تعذر الاتصال بالخادم المركزي.")
+                    return
+                }
+                
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                    let status = json["status"] as? String ?? "unknown"
+                    let boundDevice = json["deviceId"] as? String
+                    
+                    if status == "frozen" {
+                        self.kickUserOut(message: "تم تجميد اشتراكك من الإدارة ❄️")
+                    } else if status == "active" {
+                        if boundDevice == nil || boundDevice == "none" {
+                            self.bindDevice(code: cleanCode)
+                        } else if boundDevice == self.deviceID {
+                            self.authorizeUser(code: cleanCode)
+                        } else {
+                            self.kickUserOut(message: "هذا الكود مستخدم في جهاز آخر 📱")
+                        }
+                    } else {
+                        self.kickUserOut(message: "الكود غير صالح أو معطل ⛔")
+                    }
+                } else {
+                    self.kickUserOut(message: "الكود غير موجود في السيرفر ⛔")
                 }
                 self.isChecking = false
             }
-        }) { _ in DispatchQueue.main.async { self.errorMessage = "تعذر الاتصال بالخادم المركزي."; self.isChecking = false } }
+        }.resume()
     }
     
     private func bindDevice(code: String) {
-        dbRef.child("codes").child(code).updateChildValues(["status": "active", "deviceId": self.deviceID]) { error, _ in
+        guard let url = URL(string: "\(dbURL)/\(code).json") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        let body: [String: Any] = ["status": "active", "deviceId": self.deviceID]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
             DispatchQueue.main.async {
-                if error == nil { UserDefaults.standard.set(code, forKey: "attack_vip_code"); self.isAuthorized = true; self.errorMessage = nil } else { self.errorMessage = "فشل التفعيل المباشر، أعد المحاولة." }
+                if error == nil {
+                    self.authorizeUser(code: code)
+                } else {
+                    self.errorMessage = "فشل التفعيل المباشر، أعد المحاولة."
+                }
                 self.isChecking = false
             }
+        }.resume()
+    }
+    
+    private func authorizeUser(code: String) {
+        UserDefaults.standard.set(code, forKey: "attack_vip_code")
+        self.isAuthorized = true
+        self.errorMessage = nil
+        self.startRealTimeSimulation(code: code)
+    }
+    
+    // محاكاة الاتصال اللحظي (فحص الكود كل 10 ثوانٍ لطرد المستخدم إذا تم تجميده)
+    private func startRealTimeSimulation(code: String) {
+        pollingTimer?.invalidate()
+        pollingTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { _ in
+            guard let url = URL(string: "\(self.dbURL)/\(code).json") else { return }
+            URLSession.shared.dataTask(with: url) { data, response, error in
+                guard let data = data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    DispatchQueue.main.async { self.kickUserOut(message: "تم سحب الترخيص من السيرفر ⛔") }
+                    return
+                }
+                
+                let status = json["status"] as? String ?? "unknown"
+                let boundDevice = json["deviceId"] as? String
+                
+                DispatchQueue.main.async {
+                    if status == "frozen" {
+                        self.kickUserOut(message: "تم تجميد اشتراكك من الإدارة ❄️")
+                    } else if boundDevice != self.deviceID {
+                        self.kickUserOut(message: "تم نقل الكود لجهاز آخر 📱")
+                    }
+                }
+            }.resume()
         }
     }
     
     private func kickUserOut(message: String) {
-        UserDefaults.standard.removeObject(forKey: "attack_vip_code"); self.isAuthorized = false; self.errorMessage = message
+        pollingTimer?.invalidate()
+        UserDefaults.standard.removeObject(forKey: "attack_vip_code")
+        self.isAuthorized = false
+        self.errorMessage = message
+        self.isChecking = false
     }
 }
 
+// MARK: - Auth View
 struct AttackAuthView: View {
     @State private var codeInput: String = ""
     @State private var isLoading: Bool = false
@@ -220,7 +285,7 @@ struct AttackAuthView: View {
                 }
                 Button(action: {
                     guard !codeInput.isEmpty else { return }
-                    isLoading = true; authManager.verifyAndListen(code: codeInput)
+                    isLoading = true; authManager.verifyCode(code: codeInput)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) { isLoading = false }
                 }) {
                     ZStack {
