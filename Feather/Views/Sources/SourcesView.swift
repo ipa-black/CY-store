@@ -41,7 +41,6 @@ struct SourcesView: View {
         let myStoreSources = [
             // === المصادر المعتمدة للمتجر ===
             "https://raw.githubusercontent.com/ipa-black/ATTACK-repo/refs/heads/main/ATTACK.json",
-            "https://appiraq.com/ipasoon.json",
             "https://community-apps.sidestore.io/sidecommunity.json",
             "https://repository.apptesters.org"
         ]
