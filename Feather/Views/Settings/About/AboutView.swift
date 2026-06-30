@@ -42,8 +42,8 @@ struct AboutView: View {
 		NBList("حول التطبيق") {
 			Section {
 				VStack {
-					// App Image
-					AsyncImage(url: URL(string: "https://up6.cc/2026/05/17786748025561.jpeg")) { phase in
+					// صورة التطبيق الجديدة
+					AsyncImage(url: URL(string: "https://up6.cc/2026/06/178283567306191.png")) { phase in
 						if let image = phase.image {
 							image
 								.resizable()
@@ -56,8 +56,8 @@ struct AboutView: View {
 					.clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
 					.padding(.bottom, 8)
 					
-					// تثبيت اسم التطبيق
-					Text("CY STORE")
+					// اسم التطبيق الجديد
+					Text("ATTACK ستور")
 						.font(.largeTitle)
 						.bold()
 						.foregroundStyle(Color.accentColor)
@@ -74,7 +74,7 @@ struct AboutView: View {
 			.frame(maxWidth: .infinity)
 			.listRowBackground(EmptyView())
 			
-			// تغيير العنوان إلى المطورين
+			// قسم المطورين
 			NBSection("المطورين") {
 				ForEach(_credits, id: \.link) { credit in
 					_credit(
@@ -111,8 +111,8 @@ extension AboutView {
 					isCircle: true
 				)
 				
-                Spacer() // لدفع السهم إلى الطرف الآخر بشكل مرتب
-                
+				Spacer() // لدفع السهم إلى الطرف الآخر بشكل مرتب
+				
 				Image(systemName: "arrow.up.left") // استخدام سهم يناسب اللغة العربية (من اليمين لليسار)
 					.foregroundColor(.secondary.opacity(0.65))
 			}
