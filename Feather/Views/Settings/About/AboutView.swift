@@ -42,26 +42,6 @@ struct AboutView: View {
 		NBList("حول التطبيق") {
 			Section {
 				VStack {
-					// صورة التطبيق الجديدة
-					AsyncImage(url: URL(string: "https://up6.cc/2026/06/178283567306191.png")) { phase in
-						if let image = phase.image {
-							image
-								.resizable()
-								.scaledToFill()
-						} else {
-							ProgressView()
-						}
-					}
-					.frame(width: 85, height: 85)
-					.clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-					.padding(.bottom, 8)
-					
-					// اسم التطبيق الجديد
-					Text("ATTACK ستور")
-						.font(.largeTitle)
-						.bold()
-						.foregroundStyle(Color.accentColor)
-					
 					// تثبيت رقم الإصدار
 					HStack(spacing: 4) {
 						Text("الإصدار")
