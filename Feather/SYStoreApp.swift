@@ -17,6 +17,9 @@ struct SYStoreApp: App {
     @StateObject var downloadManager = DownloadManager.shared
     let storage = Storage.shared
     
+    // 💡 جلب اللون المخزن وتحديث التطبيق تلقائياً عند تغييره من "المظهر"
+    @AppStorage("Feather.userTintColor") private var appTintColor: String = "#FF6600"
+    
     // تم إزالة مدير المصادقة (AttackAuthManager).
     
     var body: some Scene {
@@ -38,15 +41,19 @@ struct SYStoreApp: App {
                 .onAppear {
                     // تعيين نمط واجهة المستخدم.
                     if let style = UIUserInterfaceStyle(rawValue: UserDefaults.standard.integer(forKey: "Feather.userInterfaceStyle")) { UIApplication.topViewController()?.view.window?.overrideUserInterfaceStyle = style }
-                    // تعيين لون صبغة التطبيق ليكون البرتقالي (من الصورة) بشكل افتراضي.
-                    // تم تغيير "#00FF9D" إلى "#FF6600".
-                    let storedHex = UserDefaults.standard.string(forKey: "Feather.userTintColor") ?? "#FF6600"
-                    UIApplication.topViewController()?.view.window?.tintColor = UIColor(Color(hex: storedHex))
+                    
+                    // تعيين لون صبغة التطبيق الأولية لعناصر UIKit
+                    UIApplication.topViewController()?.view.window?.tintColor = UIColor(Color(hex: appTintColor))
+                }
+                // 💡 تحديث عناصر UIKit (مثل التنبيهات وغيرها) فور تغيير اللون من الإعدادات
+                .onChange(of: appTintColor) { newColor in
+                    UIApplication.topViewController()?.view.window?.tintColor = UIColor(Color(hex: newColor))
                 }
             }
             .background(Color(hex: "#0C1F3F")) // استخدام الكحلي الداكن من الصورة كخلفية افتراضية.
             .ignoresSafeArea()
             .environment(\.colorScheme, .dark) // إجبار التطبيق على استخدام المظهر الداكن ليتوافق مع الألوان.
+            .tint(Color(hex: appTintColor)) // 💡 تطبيق اللون على جميع أزرار وعناصر SwiftUI ديناميكياً
         }
     }
     
@@ -134,9 +141,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     }
 }
 
-// تم حذف نظام المصادقة (AttackAuthManager و AttackAuthView).
-
-// MARK: - Extension for Hex Color (تم الاحتفاظ بها كأداة مفيدة)
+// MARK: - Extension for Hex Color
 extension Color {
     init(hex: String) {
         let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted); var int: UInt64 = 0; Scanner(string: hex).scanHexInt64(&int)
