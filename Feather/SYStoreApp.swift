@@ -8,7 +8,6 @@ import Nuke
 import IDeviceSwift
 import OSLog
 import CoreData
-// 💡 تم حذف مكتبات فايربيس ونظام الأكواد بالكامل! التطبيق الآن متاح للجميع باللونين الكحلي والبرتقالي مماثلاً لألوان الصورة.
 
 @main
 struct SYStoreApp: App {
@@ -17,18 +16,16 @@ struct SYStoreApp: App {
     @StateObject var downloadManager = DownloadManager.shared
     let storage = Storage.shared
     
-    // 💡 جلب اللون المخزن وتحديث التطبيق تلقائياً عند تغييره من "المظهر"
-    @AppStorage("Feather.userTintColor") private var appTintColor: String = "#FF6600"
-    
-    // تم إزالة مدير المصادقة (AttackAuthManager).
+    // تم ضبط اللون الافتراضي ليصبح أزرق أبل الرسمي بدلاً من البرتقالي
+    @AppStorage("Feather.userTintColor") private var appTintColor: String = "#007AFF"
     
     var body: some Scene {
         WindowGroup {
             ZStack {
-                // تم إزالة جميع شرطيات المصادقة. التطبيق يفتح مباشرة على الواجهة الرئيسية.
-                VStack {
+                VStack(spacing: 0) {
                     DownloadHeaderView(downloadManager: downloadManager)
                         .transition(.move(edge: .top).combined(with: .opacity))
+                    
                     VariedTabbarView()
                         .environment(\.managedObjectContext, storage.context)
                         .onOpenURL(perform: _handleURL)
@@ -39,21 +36,18 @@ struct SYStoreApp: App {
                     DispatchQueue.main.async { UIAlertController.showAlertWithOk(title: "خطأ", message: "ملف الربط غير متوافق.") }
                 }
                 .onAppear {
-                    // تعيين نمط واجهة المستخدم.
                     if let style = UIUserInterfaceStyle(rawValue: UserDefaults.standard.integer(forKey: "Feather.userInterfaceStyle")) { UIApplication.topViewController()?.view.window?.overrideUserInterfaceStyle = style }
                     
-                    // تعيين لون صبغة التطبيق الأولية لعناصر UIKit
                     UIApplication.topViewController()?.view.window?.tintColor = UIColor(Color(hex: appTintColor))
                 }
-                // 💡 تحديث عناصر UIKit (مثل التنبيهات وغيرها) فور تغيير اللون من الإعدادات
                 .onChange(of: appTintColor) { newColor in
                     UIApplication.topViewController()?.view.window?.tintColor = UIColor(Color(hex: newColor))
                 }
             }
-            .background(Color(hex: "#0C1F3F")) // استخدام الكحلي الداكن من الصورة كخلفية افتراضية.
+            .background(Color.black) // تم التغيير إلى اللون الأسود الحقيقي (True Black) مطابقاً للفيديو وأبل ستور
             .ignoresSafeArea()
-            .environment(\.colorScheme, .dark) // إجبار التطبيق على استخدام المظهر الداكن ليتوافق مع الألوان.
-            .tint(Color(hex: appTintColor)) // 💡 تطبيق اللون على جميع أزرار وعناصر SwiftUI ديناميكياً
+            .environment(\.colorScheme, .dark) // تفعيل المظهر الداكن التلقائي
+            .tint(Color(hex: appTintColor))
         }
     }
     
