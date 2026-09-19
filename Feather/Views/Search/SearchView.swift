@@ -2,8 +2,6 @@
 //  SearchView.swift
 //  SY STORE
 //
-//  Created by [اسمك] on [التاريخ].
-//
 
 import SwiftUI
 
@@ -11,10 +9,9 @@ struct SearchView: View {
     @Environment(\.dismiss) var dismiss
     @State private var searchText: String = ""
     
-    // بيانات وهمية للتجربة (يجب استبدالها ببيانات من AltSourceKit أو CoreData لديك)
+    // بيانات وهمية للتجربة
     @State private var allApps = MockApp.dummyData
     
-    // تصفية التطبيقات بناءً على نص البحث
     var filteredApps: [MockApp] {
         if searchText.isEmpty {
             return []
@@ -23,14 +20,13 @@ struct SearchView: View {
         }
     }
     
-    // الكلمات الشائعة (Trending Searches)
     let trendingSearches = ["WhatsApp Plus", "Spotify Premium", "Instagram Dark", "TikTok", "PUBG Hack"]
 
     var body: some View {
-        NavigationStack {
+        // استخدام NavigationView لدعم إصدارات iOS القديمة والحديثة معاً
+        NavigationView {
             List {
                 if searchText.isEmpty {
-                    // MARK: - واجهة قبل البحث (عمليات البحث الشائعة)
                     Section {
                         ForEach(trendingSearches, id: \.self) { term in
                             Button(action: {
@@ -56,12 +52,23 @@ struct SearchView: View {
                     .listRowSeparator(.hidden)
                     
                 } else {
-                    // MARK: - واجهة نتائج البحث
                     if filteredApps.isEmpty {
-                        // حالة عدم العثور على نتائج
-                        ContentUnavailableView.search(text: searchText)
+                        // حماية لدعم إصدارات ما قبل iOS 17
+                        if #available(iOS 17.0, *) {
+                            ContentUnavailableView.search(text: searchText)
+                        } else {
+                            VStack(spacing: 8) {
+                                Image(systemName: "magnifyingglass").font(.largeTitle)
+                                Text("لا توجد نتائج")
+                                    .font(.headline)
+                                Text("لم نعثر على نتائج لـ '\(searchText)'")
+                                    .font(.caption)
+                            }
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 40)
+                        }
                     } else {
-                        // عرض التطبيقات المطابقة
                         ForEach(filteredApps) { app in
                             AppSearchRowView(app: app)
                                 .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
@@ -71,10 +78,8 @@ struct SearchView: View {
             }
             .listStyle(.plain)
             .navigationTitle("البحث")
-            // إضافة شريط البحث الأصلي من أبل
             .searchable(text: $searchText, placement: .navigationBarDrawer(displayMode: .always), prompt: "الألعاب، التطبيقات، والمزيد")
             .toolbar {
-                // زر إغلاق الواجهة (بما أنها تفتح كـ Sheet)
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("تم") {
                         dismiss()
@@ -83,7 +88,7 @@ struct SearchView: View {
                 }
             }
         }
-        // إجبار الواجهة على دعم الاتجاه من اليمين لليسار (اللغة العربية)
+        .navigationViewStyle(.stack) // يمنع الانقسام الخاطئ للشاشة في الآيباد
         .environment(\.layoutDirection, .rightToLeft)
     }
 }
@@ -94,20 +99,17 @@ struct AppSearchRowView: View {
     
     var body: some View {
         HStack(spacing: 15) {
-            // أيقونة التطبيق
             Rectangle()
                 .fill(Color.gray.opacity(0.2))
                 .frame(width: 60, height: 60)
                 .cornerRadius(14)
                 .overlay(
-                    // يمكنك استبدال هذا بـ AsyncImage عند ربط البيانات الحقيقية
                     Image(systemName: "app.fill")
                         .resizable()
                         .padding(15)
                         .foregroundColor(.gray)
                 )
             
-            // تفاصيل التطبيق
             VStack(alignment: .leading, spacing: 4) {
                 Text(app.name)
                     .font(.headline)
@@ -122,7 +124,6 @@ struct AppSearchRowView: View {
             
             Spacer()
             
-            // زر التحميل/التثبيت (يشبه زر Get في أبل ستور)
             Button(action: {
                 // أمر التثبيت
             }) {
@@ -139,8 +140,7 @@ struct AppSearchRowView: View {
     }
 }
 
-// MARK: - بيانات وهمية (Mock Data) للتجربة
-// ملاحظة: احذف هذا الـ Struct عند ربط الكود بموديل البيانات الحقيقي الخاص بك (مثل ASRepository.App)
+// MARK: - بيانات وهمية للتجربة (المودل الخاص بواجهة البحث)
 struct MockApp: Identifiable {
     let id = UUID()
     let name: String
@@ -154,11 +154,4 @@ struct MockApp: Identifiable {
         MockApp(name: "YouTube Reborn", developer: "Twitch"),
         MockApp(name: "PUBG Hack", developer: "Tencent")
     ]
-}
-
-// MARK: - معاينة (Preview)
-struct SearchView_Previews: PreviewProvider {
-    static var previews: some View {
-        SearchView()
-    }
 }
