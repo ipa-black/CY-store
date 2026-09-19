@@ -1,4 +1,4 @@
-name: Beta Build and Release
+name: vsign Auto Build
 
 on:
   workflow_dispatch:
@@ -8,45 +8,44 @@ permissions:
 
 jobs:
   build:
-    name: Build, Modify, and Release Beta
+    name: Build, Modify, and Release vsign
     runs-on: macos-14
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1 # (التحسين 1) جلب الكود الأخير فقط لسرعة فائقة
+          fetch-depth: 1 
           submodules: recursive
 
       - name: Setup Xcode Cache
         uses: actions/cache@v4
-        # (التحسين 2) تخزين الملفات المؤقتة لتسريع عمليات البناء القادمة بشكل هائل
         with:
           path: ~/Library/Developer/Xcode/DerivedData/
           key: ${{ runner.os }}-xcode-deriveddata-${{ hashFiles('**/project.pbxproj', '**/*.Package.resolved') }}
           restore-keys: |
             ${{ runner.os }}-xcode-deriveddata-
 
-      - name: Use Xcode 15.4
+      - name: Use Xcode 16.0
+        # تم التعديل هنا: استخدام Xcode 16 ليتوافق مع تنسيق مشروعك (Format 77)
         run: |
-          sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer || true
+          sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer || true
 
-      - name: Fast Modify & Patch (Info.plist & iOS 15 UI)
-        # (التحسين 3) دمج جميع عمليات التعديل والبحث في خطوة واحدة سريعة جداً
+      - name: Fast Modify & Patch (vsign Info & iOS 15 UI)
         run: |
-          # تعديل Info.plist
+          # تعديل الاسم والحزمة إلى vsign
           INFO_PLIST_PATH="Feather/Resources/Info.plist"
           if [ -f "$INFO_PLIST_PATH" ]; then
-            plutil -replace CFBundleDisplayName -string "الرئيسية" "$INFO_PLIST_PATH" || true
-            plutil -replace CFBundleName -string "ATTACK STORE" "$INFO_PLIST_PATH" || true
-            plutil -replace CFBundleIdentifier -string "app.attackstore" "$INFO_PLIST_PATH" || true
+            plutil -replace CFBundleDisplayName -string "vsign" "$INFO_PLIST_PATH" || true
+            plutil -replace CFBundleName -string "vsign" "$INFO_PLIST_PATH" || true
+            plutil -replace CFBundleIdentifier -string "app.vsign.store" "$INFO_PLIST_PATH" || true
             plutil -replace MinimumOSVersion -string "15.0" "$INFO_PLIST_PATH" || true
           fi
 
-          # إجبار المشروع على iOS 15
+          # إجبار إعدادات البناء على iOS 15
           find . -name "project.pbxproj" -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]*\.[0-9]*;/IPHONEOS_DEPLOYMENT_TARGET = 15.0;/g' {} +
 
-          # بحث وتعديل أكواد واجهة iOS 15 بتمريرة واحدة فقط على الملفات
+          # تعديل أكواد iOS 16 إلى iOS 15 بتمريرة واحدة سريعة
           find . -name "*.swift" -type f -exec perl -pi -e '
             s/\.rect\(cornerRadius:\s*([^,]+),\s*style:\s*\.([^)]+)\)/RoundedRectangle(cornerRadius: $1, style: .$2)/g;
             s/\.glassEffect\([^,]+,\s*in:/ \.background(Color.secondary.opacity(0.2), in:/g;             s/\.glassEffect\(\)/\.background(Color.secondary.opacity(0.2))/g;
@@ -56,23 +55,26 @@ jobs:
         run: |
           agvtool new-version -all $(git rev-parse HEAD) || true
 
-      - name: Build and Verify
+      - name: Build vsign IPA
         run: |
           export IPHONEOS_DEPLOYMENT_TARGET=15.0
-          make iphoneos
+          
+          # تمرير اسم vsign لملف Makefile ليكون الناتج vsign.ipa
+          make iphoneos NAME=vsign
+          
           mkdir -p upload
-          find . -name "*.ipa" -exec mv {} upload/ \;
+          # نقل الناتج من مجلد packages الخاص بـ Makefile إلى مجلد الرفع
+          find packages -name "*.ipa" -exec mv {} upload/ \;
 
       - name: Get Version & Create Release Directly
-        # (التحسين 4) دمج الخطوتين اختصاراً للوقت
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION=$(plutil -extract CFBundleShortVersionString raw "Feather/Resources/Info.plist" 2>/dev/null || echo "1.0.0")
-          NEW_TAG="beta-${{ github.run_number }}"
+          NEW_TAG="vsign-${{ github.run_number }}"
           
           gh release create "$NEW_TAG" "upload/*.ipa" \
-            --title "ATTACK STORE v$VERSION" \
-            --notes "### ATTACK STORE Auto Build\nCommit: \`${{ github.sha }}\`\n*📱 iOS 15 Compatibility Patched & Build Optimized ⚡*" \
+            --title "vsign v$VERSION" \
+            --notes "### vsign Auto Build 🚀\nCommit: \`${{ github.sha }}\`\n*📱 Compiled with Xcode 16 & iOS 15 Compatibility Patched ⚡*" \
             --prerelease \
             --target ${{ github.sha }}
