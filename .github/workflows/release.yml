@@ -1,87 +1,77 @@
-name: vsign Auto Build
+name: Beta Build
 
 on:
+  push:
+    branches: [ "main" ]
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   build:
-    name: Build, Modify, and Release vsign
-    runs-on: macos-14
+    name: Build Beta
+    runs-on: macos-26
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1 
+          fetch-depth: 0
           submodules: recursive
 
-      - name: Setup Xcode Cache
-        uses: actions/cache@v4
-        with:
-          path: ~/Library/Developer/Xcode/DerivedData/
-          key: ${{ runner.os }}-xcode-deriveddata-${{ hashFiles('**/project.pbxproj', '**/*.Package.resolved') }}
-          restore-keys: |
-            ${{ runner.os }}-xcode-deriveddata-
-
-      - name: Auto-Detect and Use Xcode 16
+      - name: Build
         run: |
-          XCODE_PATH=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | head -n 1)
-          if [ -z "$XCODE_PATH" ]; then
-            echo "❌ لم يتم العثور على Xcode 16. الإصدارات المتوفرة هي:"
-            ls -d /Applications/Xcode*.app
-            exit 1
-          fi
-          echo "✅ تم العثور على الإصدار وتفعيله: $XCODE_PATH"
-          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
-          xcodebuild -version
+          make
 
-      - name: Fast Modify & Patch (vsign Info, iOS 15 UI & Swift 6 Sendable Fix)
-        run: |
-          # تعديل الاسم والحزمة إلى vsign
-          INFO_PLIST_PATH="Feather/Resources/Info.plist"
-          if [ -f "$INFO_PLIST_PATH" ]; then
-            plutil -replace CFBundleDisplayName -string "vsign" "$INFO_PLIST_PATH" || true
-            plutil -replace CFBundleName -string "vsign" "$INFO_PLIST_PATH" || true
-            plutil -replace CFBundleIdentifier -string "app.vsign.store" "$INFO_PLIST_PATH" || true
-            plutil -replace MinimumOSVersion -string "15.0" "$INFO_PLIST_PATH" || true
-          fi
-
-          # إجبار البناء على iOS 15 وإيقاف التدقيق الصارم على مستوى المشروع
-          find . -name "project.pbxproj" -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]*\.[0-9]*;/IPHONEOS_DEPLOYMENT_TARGET = 15.0; SWIFT_STRICT_CONCURRENCY = minimal;/g' {} +
-
-          # 💡 الحل الجذري هنا: تعديل أكواد الواجهات، وإضافة @Sendable إجبارياً للـ completion لحل خطأ Swift 6
-          find . -name "*.swift" -type f -exec perl -pi -e '
-            s/\.rect\(cornerRadius:\s*([^,]+),\s*style:\s*\.([^)]+)\)/RoundedRectangle(cornerRadius: $1, style: .$2)/g;
-            s/\.glassEffect\([^,]+,\s*in:/ \.background(Color.secondary.opacity(0.2), in:/g;             s/\.glassEffect\(\)/\.background(Color.secondary.opacity(0.2))/g;
-            s/\@escaping\s*\(/ \@escaping \@Sendable \(/g;
-          ' {} +
-
-      - name: Update Version with agvtool
-        run: |
-          agvtool new-version -all $(git rev-parse HEAD) || true
-
-      - name: Build vsign IPA
-        run: |
-          export IPHONEOS_DEPLOYMENT_TARGET=15.0
-          
-          # تمرير اسم vsign لملف Makefile ليكون الناتج vsign.ipa
-          make iphoneos NAME=vsign
-          
-          mkdir -p upload
-          find packages -name "*.ipa" -exec mv {} upload/ \;
-
-      - name: Get Version & Create Release Directly
+      - name: Update Beta Release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          VERSION=$(plutil -extract CFBundleShortVersionString raw "Feather/Resources/Info.plist" 2>/dev/null || echo "1.0.0")
-          NEW_TAG="vsign-${{ github.run_number }}"
+          LATEST_OFFICIAL_TAG=$(git describe --tags --match "v*" --abbrev=0 2>/dev/null || echo "")
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          echo "## Commit: \`$COMMIT_MSG\` (${{ github.sha }})" >> release_notes.md
+          echo "### New in this build (Compared to $LATEST_OFFICIAL_TAG):" >> release_notes.md
+            
+          CHANGES=$(git log --pretty=format:"* %s (%h)" ${LATEST_OFFICIAL_TAG}..HEAD)
+            
+          if [ -z "$CHANGES" ]; then
+            echo "* No code changes since $LATEST_OFFICIAL_TAG" >> release_notes.md
+          else
+            echo "$CHANGES" >> release_notes.md
+          fi
           
-          gh release create "$NEW_TAG" "upload/*.ipa" \
-            --title "vsign v$VERSION" \
-            --notes "### vsign Auto Build 🚀\nCommit: \`${{ github.sha }}\`\n*📱 Compiled with Xcode 16 & Swift 6 Sendable Concurrency Fixed ⚡*" \
+          echo "### Commit SHA: ${{ github.sha }}" >> release_notes.md
+          
+          cat release_notes.md
+
+          gh release delete beta --cleanup-tag -y || true
+          
+          gh release create beta "packages/Ksign.ipa" \
+            --title "Latest Beta Build" \
+            --notes "$(cat release_notes.md)" \
             --prerelease \
             --target ${{ github.sha }}
+
+      - name: Notify Discord
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          
+          REPO="${{ github.repository }}"
+          TAG="beta"
+          FILENAME="Ksign.ipa"
+          
+          DOWNLOAD_URL="https://github.com/$REPO/releases/download/$TAG/$FILENAME"
+          RELEASE_URL="https://github.com/$REPO/releases/tag/$TAG"
+          
+          echo "Sending link to Discord..."
+          
+          jq -n \
+            --arg commit_msg "$COMMIT_MSG" \
+            --arg download_url "$DOWNLOAD_URL" \
+            --arg release_url "$RELEASE_URL" \
+            '{content: "**New Beta Released!**\n\nChanges: `\($commit_msg)`\n\n[**Download IPA**](\($download_url))\n[View Release](\($release_url))"}' > discord_payload.json
+
+          curl -v \
+            -H "Content-Type: application/json" \
+            -d @discord_payload.json \
+            "$DISCORD_WEBHOOK"
