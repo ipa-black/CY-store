@@ -38,7 +38,7 @@ jobs:
           sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
           xcodebuild -version
 
-      - name: Fast Modify & Patch (vsign Info & iOS 15 UI & Concurrency)
+      - name: Fast Modify & Patch (vsign Info, iOS 15 UI & Swift 6 Sendable Fix)
         run: |
           # تعديل الاسم والحزمة إلى vsign
           INFO_PLIST_PATH="Feather/Resources/Info.plist"
@@ -49,13 +49,14 @@ jobs:
             plutil -replace MinimumOSVersion -string "15.0" "$INFO_PLIST_PATH" || true
           fi
 
-          # تم التعديل هنا: إجبار البناء على iOS 15 وإيقاف التدقيق الصارم لـ Swift 6 (لحل مشكلة Sendable)
+          # إجبار البناء على iOS 15 وإيقاف التدقيق الصارم على مستوى المشروع
           find . -name "project.pbxproj" -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]*\.[0-9]*;/IPHONEOS_DEPLOYMENT_TARGET = 15.0; SWIFT_STRICT_CONCURRENCY = minimal;/g' {} +
 
-          # تعديل أكواد iOS 16 إلى iOS 15
+          # 💡 الحل الجذري هنا: تعديل أكواد الواجهات، وإضافة @Sendable إجبارياً للـ completion لحل خطأ Swift 6
           find . -name "*.swift" -type f -exec perl -pi -e '
             s/\.rect\(cornerRadius:\s*([^,]+),\s*style:\s*\.([^)]+)\)/RoundedRectangle(cornerRadius: $1, style: .$2)/g;
             s/\.glassEffect\([^,]+,\s*in:/ \.background(Color.secondary.opacity(0.2), in:/g;             s/\.glassEffect\(\)/\.background(Color.secondary.opacity(0.2))/g;
+            s/\@escaping\s*\(/ \@escaping \@Sendable \(/g;
           ' {} +
 
       - name: Update Version with agvtool
@@ -81,6 +82,6 @@ jobs:
           
           gh release create "$NEW_TAG" "upload/*.ipa" \
             --title "vsign v$VERSION" \
-            --notes "### vsign Auto Build 🚀\nCommit: \`${{ github.sha }}\`\n*📱 Compiled with Xcode 16 & Swift Concurrency Fixed ⚡*" \
+            --notes "### vsign Auto Build 🚀\nCommit: \`${{ github.sha }}\`\n*📱 Compiled with Xcode 16 & Swift 6 Sendable Concurrency Fixed ⚡*" \
             --prerelease \
             --target ${{ github.sha }}
