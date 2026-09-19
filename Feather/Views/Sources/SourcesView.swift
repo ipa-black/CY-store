@@ -39,10 +39,21 @@ struct SourcesView: View {
                 if isLoading {
                     ProgressView("جاري جلب التطبيقات...")
                 } else if featuredApps.isEmpty && essentialApps.isEmpty {
-                    ContentUnavailableView {
-                        Label("لا توجد تطبيقات", systemImage: "app.dashed")
-                    } description: {
-                        Text("يرجى سحب الشاشة للأسفل للتحديث.")
+                    // التوافق مع إصدارات iOS المتعددة
+                    if #available(iOS 17.0, *) {
+                        ContentUnavailableView {
+                            Label("لا توجد تطبيقات", systemImage: "app.dashed")
+                        } description: {
+                            Text("يرجى سحب الشاشة للأسفل للتحديث.")
+                        }
+                    } else {
+                        VStack(spacing: 10) {
+                            Image(systemName: "app.dashed").font(.largeTitle)
+                            Text("لا توجد تطبيقات").font(.headline)
+                            Text("يرجى سحب الشاشة للأسفل للتحديث.").font(.subheadline)
+                        }
+                        .foregroundColor(.secondary)
+                        .padding(.top, 50)
                     }
                 } else {
                     ScrollView(.vertical, showsIndicators: false) {
@@ -126,13 +137,11 @@ struct SourcesView: View {
             }
             
             DispatchQueue.main.async {
-                // تقسيم التطبيقات بشكل يحاكي المتجر
                 if allApps.count > 0 {
-                    self.featuredApps = Array(allApps.prefix(4)) // أول 4 للبانر
+                    self.featuredApps = Array(allApps.prefix(4))
                 }
                 
                 if allApps.count > 4 {
-                    // اختيار 9 تطبيقات عشوائية أو التالية كـ "لا غنى عنها"
                     let nextApps = Array(allApps.dropFirst(4))
                     self.essentialApps = Array(nextApps.prefix(9)) 
                 }
@@ -140,7 +149,7 @@ struct SourcesView: View {
                 if allApps.count > 13 {
                     self.newApps = Array(allApps.dropFirst(13).prefix(12))
                 } else {
-                    self.newApps = allApps // عرض كل شيء إذا كان العدد قليلاً
+                    self.newApps = allApps
                 }
                 
                 self.isLoading = false
@@ -176,7 +185,8 @@ struct FeaturedAppBanner: View {
                 .foregroundColor(.blue)
                 .textCase(nil)
             
-            Text(app.name)
+            // حماية المتغيرات الاختيارية
+            Text(app.name ?? "تطبيق غير معروف")
                 .font(.title2.weight(.regular))
                 .foregroundColor(.primary)
                 .lineLimit(1)
@@ -186,7 +196,6 @@ struct FeaturedAppBanner: View {
                 .foregroundColor(.secondary)
                 .lineLimit(1)
             
-            // الصورة الرئيسية (بانر أو الأيقونة مموهة كخلفية)
             GeometryReader { proxy in
                 if let iconUrl = app.iconURL {
                     AsyncImage(url: iconUrl) { phase in
@@ -202,6 +211,9 @@ struct FeaturedAppBanner: View {
                                 .fill(Color.secondary.opacity(0.1))
                         }
                     }
+                } else {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.secondary.opacity(0.1))
                 }
             }
             .frame(height: 200)
@@ -217,7 +229,6 @@ struct AppSectionHorizontalView: View {
     let apps: [(source: ASRepository, app: ASRepository.App)]
     let onSelect: (SourceAppRoute) -> Void
     
-    // تحديد شبكة من 3 صفوف
     let rows = [
         GridItem(.fixed(75), spacing: 10),
         GridItem(.fixed(75), spacing: 10),
@@ -226,7 +237,6 @@ struct AppSectionHorizontalView: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
-            // ترويسة القسم
             HStack(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
@@ -242,7 +252,6 @@ struct AppSectionHorizontalView: View {
             }
             .padding(.horizontal, 20)
             
-            // القائمة الأفقية
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHGrid(rows: rows, spacing: 15) {
                     ForEach(apps, id: \.app.currentUniqueId) { item in
@@ -250,7 +259,7 @@ struct AppSectionHorizontalView: View {
                             onSelect(SourceAppRoute(source: item.source, app: item.app))
                         } label: {
                             CompactAppRow(app: item.app)
-                                .frame(width: UIScreen.main.bounds.width - 40) // عرض الكرت ناقص الهوامش
+                                .frame(width: UIScreen.main.bounds.width - 40)
                         }
                         .buttonStyle(.plain)
                     }
@@ -282,11 +291,15 @@ struct CompactAppRow: View {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .stroke(Color.primary.opacity(0.1), lineWidth: 0.5)
                 )
+            } else {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Color.gray.opacity(0.2))
+                    .frame(width: 65, height: 65)
             }
             
-            // تفاصيل التطبيق
+            // تفاصيل التطبيق مع حماية المتغيرات
             VStack(alignment: .leading, spacing: 4) {
-                Text(app.name)
+                Text(app.name ?? "تطبيق غير معروف")
                     .font(.headline)
                     .foregroundColor(.primary)
                     .lineLimit(1)
@@ -308,11 +321,6 @@ struct CompactAppRow: View {
                     .padding(.vertical, 7)
                     .background(Color.blue.opacity(0.12))
                     .clipShape(Capsule())
-                
-                Text("مشتريات داخل التطبيق")
-                    .font(.system(size: 8))
-                    .foregroundColor(.secondary)
-                    .opacity(0.0) // يمكن تفعيلها إذا توفرت بيانات
             }
         }
         .padding(.vertical, 5)
