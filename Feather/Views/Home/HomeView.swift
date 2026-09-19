@@ -3,7 +3,7 @@
 //  CY STORE
 //
 //  Created by samara on 13.05.2026.
-//  Modified for CY STORE - Safe Native Banners & Auto-Scroll.
+//  Modified for CY STORE - Today App Store Style & No Ads.
 //
 
 import SwiftUI
@@ -17,13 +17,9 @@ struct HomeView: View {
     
     @State private var _allApps: [(source: ASRepository, app: ASRepository.App)] = []
     @State private var _recentApps: [(source: ASRepository, app: ASRepository.App)] = []
-    @State private var _banners: [ASRepository.News] = []
     @State private var _selectedRoute: SourceAppRoute?
     @State private var isLoading = true
     @State private var _recentAppsCount = 0
-    @State private var _currentBannerIndex = 0
-    
-    private let bannerTimer = Timer.publish(every: 3.5, on: .main, in: .common).autoconnect()
 
     @FetchRequest(
         entity: AltSource.entity(),
@@ -31,117 +27,76 @@ struct HomeView: View {
         animation: .snappy
     ) private var _sources: FetchedResults<AltSource>
 
+    // تنسيق التاريخ لواجهة "اليوم"
+    private var formattedDate: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "ar")
+        formatter.dateFormat = "EEEE، d MMMM"
+        return formatter.string(from: Date()).uppercased()
+    }
+
     var body: some View {
-        NBNavigationView("الرئيسية") {
+        NBNavigationView("") {
             ZStack {
-                if isLoading && _recentApps.isEmpty && _banners.isEmpty {
+                Color(uiColor: .systemBackground).edgesIgnoringSafeArea(.all)
+                
+                if isLoading && _recentApps.isEmpty {
                     ProgressView("جاري التحديث...")
-                } else if _recentApps.isEmpty && _banners.isEmpty {
+                } else if _recentApps.isEmpty {
                     if #available(iOS 17, *) {
                         ContentUnavailableView {
                             Label("لا توجد تطبيقات", systemImage: "tray.fill")
                         } description: {
-                            Text("لم يتم العثور على تطبيقات أو عروض حالياً.")
+                            Text("لم يتم العثور على تطبيقات حالياً.")
                         }
                     } else {
                         Text("لا توجد تطبيقات")
                             .foregroundColor(.secondary)
                     }
                 } else {
-                    List {
-                        // MARK: - قسم البنرات الإعلانية (من ipa-black فقط)
-                        if !_banners.isEmpty {
-                            Section {
-                                TabView(selection: $_currentBannerIndex) {
-                                    ForEach(_banners.indices, id: \.self) { index in
-                                        let banner = _banners[index]
-                                        
-                                        Button {
-                                            if let url = banner.url {
-                                                openURL(url)
-                                            } else if let appID = banner.appID,
-                                                      let targetApp = _allApps.first(where: { $0.app.id == appID }) {
-                                                _selectedRoute = SourceAppRoute(source: targetApp.source, app: targetApp.app)
-                                            }
-                                        } label: {
-                                            if let imgUrl = banner.imageURL {
-                                                AsyncImage(url: imgUrl) { phase in
-                                                    if let image = phase.image {
-                                                        image
-                                                            .resizable()
-                                                            .aspectRatio(contentMode: .fill)
-                                                    } else if phase.error != nil {
-                                                        Rectangle()
-                                                            .fill(Color(uiColor: .secondarySystemBackground))
-                                                            .overlay(Image(systemName: "photo.fill").foregroundColor(.secondary))
-                                                    } else {
-                                                        Rectangle()
-                                                            .fill(Color(uiColor: .secondarySystemBackground))
-                                                            .overlay(ProgressView())
-                                                    }
-                                                }
-                                                .frame(height: 190)
-                                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                                                .padding(.horizontal, 16)
-                                            }
-                                        }
-                                        .buttonStyle(.plain)
-                                        .tag(index)
-                                    }
-                                }
-                                .frame(height: 230)
-                                .tabViewStyle(.page(indexDisplayMode: .always))
-                                .listRowInsets(EdgeInsets())
-                                .listRowBackground(Color.clear)
-                                .listRowSeparator(.hidden)
-                                .onReceive(bannerTimer) { _ in
-                                    if !_banners.isEmpty {
-                                        withAnimation(.easeInOut(duration: 0.5)) {
-                                            _currentBannerIndex = (_currentBannerIndex + 1) % _banners.count
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // MARK: - قسم أحدث التطبيقات فرز حسب الإضافة مع العدد
-                        if !_recentApps.isEmpty {
-                            Section {
-                                ForEach(_recentApps, id: \.app.currentUniqueId) { item in
-                                    Button {
-                                        _selectedRoute = SourceAppRoute(source: item.source, app: item.app)
-                                    } label: {
-                                        SourceAppsCellView(source: item.source, app: item.app)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            } header: {
-                                HStack(spacing: 6) {
-                                    Text("أحدث الإضافات")
-                                        .font(.title3.bold())
-                                        .foregroundColor(.primary)
+                    ScrollView(.vertical, showsIndicators: false) {
+                        LazyVStack(spacing: 30) {
+                            
+                            // MARK: - ترويسة واجهة "اليوم" (Today Header)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(formattedDate)
+                                    .font(.footnote.weight(.bold))
+                                    .foregroundColor(.secondary)
+                                
+                                HStack {
+                                    Text("اليوم")
+                                        .font(.largeTitle.weight(.bold))
+                                    Spacer()
                                     
-                                    Text("\(_recentAppsCount)")
-                                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 2)
-                                        .background(Color.accentColor.opacity(0.15))
+                                    // أيقونة الحساب (اختياري، مشابهة لمتجر آبل)
+                                    Image(systemName: "person.crop.circle")
+                                        .font(.largeTitle)
                                         .foregroundColor(.accentColor)
-                                        .clipShape(Capsule())
                                 }
-                                .padding(.top, 5)
-                                .textCase(nil)
                             }
+                            .padding(.horizontal, 20)
+                            .padding(.top, 10)
+
+                            // MARK: - كروت التطبيقات (Today Cards)
+                            ForEach(_recentApps, id: \.app.currentUniqueId) { item in
+                                Button {
+                                    _selectedRoute = SourceAppRoute(source: item.source, app: item.app)
+                                } label: {
+                                    TodayCardView(app: item.app)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, 20)
                         }
+                        .padding(.bottom, 30)
                     }
-                    .listStyle(.insetGrouped)
                 }
             }
+            .navigationBarHidden(true)
             .compatNavigationDestination(item: $_selectedRoute) { route in
                 SourceAppsDetailView(source: route.source, app: route.app)
             }
             .refreshable {
-                // محاولة الجلب وفي حال حدوث خطأ في سورس خارجي لا يتوقف البرنامج
                 do {
                     await viewModel.fetchSources(_sources, refresh: true)
                 } catch {
@@ -160,32 +115,19 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - جلب البيانات الآمن
+    // MARK: - جلب البيانات الآمن (بدون إعلانات)
     private func _loadData() {
         isLoading = true
         Task {
             let rawSources = _sources
-            
             var allApps: [(source: ASRepository, app: ASRepository.App)] = []
-            var allBanners: [ASRepository.News] = []
 
-            // التعديل: المرور على rawSources للوصول الآمن للمعلومات دون الحاجة لخاصية identifier
             for rawSource in rawSources {
                 guard let source = viewModel.sources[rawSource] else { continue }
                 
-                // حماية 1: قراءة التطبيقات بشكل مستقل
                 let sourceApps = source.apps
                 for app in sourceApps {
                     allApps.append((source: source, app: app))
-                }
-                
-                // حماية 2: عزل وقراءة بنرات ipa-black فقط
-                if let sourceURLString = rawSource.sourceURL?.absoluteString.lowercased() {
-                    if sourceURLString.contains("ipa-black") {
-                        if let news = source.news {
-                            allBanners.append(contentsOf: news)
-                        }
-                    }
                 }
             }
 
@@ -197,20 +139,101 @@ struct HomeView: View {
             }
 
             let topApps = Array(allApps.prefix(25))
-            let validBanners = allBanners.filter { $0.imageURL != nil }
 
             DispatchQueue.main.async {
                 self._allApps = allApps
                 self._recentApps = topApps
-                self._banners = validBanners
                 self._recentAppsCount = topApps.count
-                
-                if self._currentBannerIndex >= validBanners.count {
-                    self._currentBannerIndex = 0
-                }
                 self.isLoading = false
             }
         }
+    }
+}
+
+// MARK: - Today Card View (تصميم الكرت لمتجر آبل)
+struct TodayCardView: View {
+    let app: ASRepository.App
+    
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            // الخلفية (استخدام أيقونة التطبيق مع تمويه كخلفية فنية)
+            if let iconUrl = app.iconURL {
+                AsyncImage(url: iconUrl) { phase in
+                    if let image = phase.image {
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(height: 360)
+                            .blur(radius: 30)
+                            .overlay(Color.black.opacity(0.2))
+                    } else {
+                        Rectangle().fill(Color.secondary.opacity(0.2))
+                    }
+                }
+            }
+            
+            // محتوى الكرت من الأعلى
+            VStack(alignment: .leading) {
+                Text("أحدث الإضافات")
+                    .font(.headline.weight(.semibold))
+                    .foregroundColor(.white.opacity(0.8))
+                    .shadow(radius: 2)
+                
+                Text(app.name)
+                    .font(.title.weight(.bold))
+                    .foregroundColor(.white)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(2)
+                    .shadow(radius: 3)
+                
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+            
+            // الشريط السفلي لتفاصيل التطبيق
+            HStack(spacing: 12) {
+                if let iconUrl = app.iconURL {
+                    AsyncImage(url: iconUrl) { phase in
+                        if let image = phase.image {
+                            image.resizable().aspectRatio(contentMode: .fit)
+                        } else {
+                            Color.secondary.opacity(0.3)
+                        }
+                    }
+                    .frame(width: 50, height: 50)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(app.name)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    
+                    Text(app.developerName ?? "مطور غير معروف")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                
+                Spacer()
+                
+                // زر التحميل الوهمي (الشكل فقط، الضغط يتم على الكرت كاملاً)
+                Text("عرض")
+                    .font(.subheadline.weight(.bold))
+                    .foregroundColor(.accentColor)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                    .background(Color.secondary.opacity(0.15))
+                    .clipShape(Capsule())
+            }
+            .padding(16)
+            .background(.ultraThinMaterial)
+        }
+        .frame(height: 360)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: Color.black.opacity(0.15), radius: 15, x: 0, y: 8)
     }
 }
 
