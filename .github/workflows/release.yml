@@ -26,10 +26,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-xcode-deriveddata-
 
-      - name: Use Xcode 16.0
-        # تم التعديل هنا: استخدام Xcode 16 ليتوافق مع تنسيق مشروعك (Format 77)
+      - name: Auto-Detect and Use Xcode 16
+        # هذا التعديل سيبحث تلقائياً عن Xcode 16 بغض النظر عن طريقة تسميته في جيتهاب
         run: |
-          sudo xcode-select -s /Applications/Xcode_16.0.app/Contents/Developer || true
+          XCODE_PATH=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | head -n 1)
+          if [ -z "$XCODE_PATH" ]; then
+            echo "❌ لم يتم العثور على Xcode 16. الإصدارات المتوفرة هي:"
+            ls -d /Applications/Xcode*.app
+            exit 1
+          fi
+          echo "✅ تم العثور على الإصدار وتفعيله: $XCODE_PATH"
+          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+          xcodebuild -version
 
       - name: Fast Modify & Patch (vsign Info & iOS 15 UI)
         run: |
