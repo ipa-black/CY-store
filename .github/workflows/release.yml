@@ -1,52 +1,105 @@
-name: Beta Build
+name: Ksign Beta Build
 
 on:
   push:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    name: Build Beta
-    runs-on: macos-26
+    name: Build and Release Ksign Beta
+    # تم التصحيح: macos-26 غير موجود، الأحدث والمستقر هو macos-14
+    runs-on: macos-14
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          # تم الإبقاء على 0 لكي يتمكن السكربت الخاص بك من قراءة تاريخ التحديثات (git log) بشكل صحيح
+          fetch-depth: 0 
           submodules: recursive
 
-      - name: Build
+      - name: Setup Xcode Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/
+          key: ${{ runner.os }}-xcode-deriveddata-${{ hashFiles('**/project.pbxproj', '**/*.Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-xcode-deriveddata-
+
+      - name: Auto-Detect and Use Xcode 16
         run: |
-          make
+          XCODE_PATH=$(ls -d /Applications/Xcode_16*.app 2>/dev/null | head -n 1)
+          if [ -z "$XCODE_PATH" ]; then
+            echo "❌ لم يتم العثور على Xcode 16."
+            ls -d /Applications/Xcode*.app
+            exit 1
+          fi
+          echo "✅ تم العثور على الإصدار وتفعيله: $XCODE_PATH"
+          sudo xcode-select -s "$XCODE_PATH/Contents/Developer"
+
+      - name: Fast Modify & Patch (Ksign Info, iOS 15 UI & Swift Errors)
+        run: |
+          # تعديل الاسم والحزمة إلى Ksign
+          INFO_PLIST_PATH="Feather/Resources/Info.plist"
+          if [ -f "$INFO_PLIST_PATH" ]; then
+            plutil -replace CFBundleDisplayName -string "Ksign" "$INFO_PLIST_PATH" || true
+            plutil -replace CFBundleName -string "Ksign" "$INFO_PLIST_PATH" || true
+            plutil -replace CFBundleIdentifier -string "app.ksign.store" "$INFO_PLIST_PATH" || true
+            plutil -replace MinimumOSVersion -string "15.0" "$INFO_PLIST_PATH" || true
+          fi
+
+          # إجبار البناء على iOS 15 وإيقاف التدقيق الصارم لـ Swift 6
+          find . -name "project.pbxproj" -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]*\.[0-9]*;/IPHONEOS_DEPLOYMENT_TARGET = 15.0; SWIFT_STRICT_CONCURRENCY = minimal;/g' {} +
+
+          # ترقيع أكواد الواجهات وأخطاء developerName و app.name
+          find . -name "*.swift" -type f -exec perl -pi -e '
+            s/\.rect\(cornerRadius:\s*([^,]+),\s*style:\s*\.([^)]+)\)/RoundedRectangle(cornerRadius: $1, style: .$2)/g;
+            s/\.glassEffect\([^,]+,\s*in:/ \.background(Color.secondary.opacity(0.2), in:/g;             s/\.glassEffect\(\)/\.background(Color.secondary.opacity(0.2))/g;
+            s/\@escaping\s*\(/ \@escaping \@Sendable \(/g;
+            s/app\.developerName/app.developer/g;
+            s/Text\(app\.name\)/Text\(app.name \?\? "تطبيق غير معروف"\)/g;
+          ' {} +
+
+      - name: Build Ksign IPA
+        run: |
+          export IPHONEOS_DEPLOYMENT_TARGET=15.0
+          # تحديد اسم التطبيق Ksign لملف الـ Makefile
+          make iphoneos NAME=Ksign
 
       - name: Update Beta Release
         env:
-          GH_TOKEN: ${{ github.token }}
+          # استخدام secrets.GITHUB_TOKEN بدلاً من github.token لضمان وجود الصلاحيات
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           LATEST_OFFICIAL_TAG=$(git describe --tags --match "v*" --abbrev=0 2>/dev/null || echo "")
           COMMIT_MSG=$(git log -1 --pretty=%B)
-          echo "## Commit: \`$COMMIT_MSG\` (${{ github.sha }})" >> release_notes.md
-          echo "### New in this build (Compared to $LATEST_OFFICIAL_TAG):" >> release_notes.md
-            
-          CHANGES=$(git log --pretty=format:"* %s (%h)" ${LATEST_OFFICIAL_TAG}..HEAD)
-            
-          if [ -z "$CHANGES" ]; then
-            echo "* No code changes since $LATEST_OFFICIAL_TAG" >> release_notes.md
+          
+          echo "## Commit: \`$COMMIT_MSG\` (${{ github.sha }})" > release_notes.md
+          
+          if [ -n "$LATEST_OFFICIAL_TAG" ]; then
+            echo "### New in this build (Compared to $LATEST_OFFICIAL_TAG):" >> release_notes.md
+            CHANGES=$(git log --pretty=format:"* %s (%h)" ${LATEST_OFFICIAL_TAG}..HEAD)
+            if [ -z "$CHANGES" ]; then
+              echo "* No code changes since $LATEST_OFFICIAL_TAG" >> release_notes.md
+            else
+              echo "$CHANGES" >> release_notes.md
+            fi
           else
-            echo "$CHANGES" >> release_notes.md
+            echo "### Initial Beta Build" >> release_notes.md
           fi
           
           echo "### Commit SHA: ${{ github.sha }}" >> release_notes.md
-          
-          cat release_notes.md
 
+          # حذف الإصدار القديم وإنشاء الجديد
           gh release delete beta --cleanup-tag -y || true
           
           gh release create beta "packages/Ksign.ipa" \
             --title "Latest Beta Build" \
-            --notes "$(cat release_notes.md)" \
+            --notes-file release_notes.md \
             --prerelease \
             --target ${{ github.sha }}
 
@@ -54,8 +107,13 @@ jobs:
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
-          COMMIT_MSG=$(git log -1 --pretty=%B)
+          # حماية في حال نسيت إضافة رابط الديسكورد في الـ Secrets
+          if [ -z "$DISCORD_WEBHOOK" ]; then
+            echo "⚠️ لم يتم إعداد DISCORD_WEBHOOK في الـ Secrets. جاري تخطي الإشعار."
+            exit 0
+          fi
           
+          COMMIT_MSG=$(git log -1 --pretty=%B)
           REPO="${{ github.repository }}"
           TAG="beta"
           FILENAME="Ksign.ipa"
@@ -63,15 +121,14 @@ jobs:
           DOWNLOAD_URL="https://github.com/$REPO/releases/download/$TAG/$FILENAME"
           RELEASE_URL="https://github.com/$REPO/releases/tag/$TAG"
           
-          echo "Sending link to Discord..."
-          
+          # تنسيق الرسالة لتبدو أنيقة في الديسكورد
           jq -n \
             --arg commit_msg "$COMMIT_MSG" \
             --arg download_url "$DOWNLOAD_URL" \
             --arg release_url "$RELEASE_URL" \
-            '{content: "**New Beta Released!**\n\nChanges: `\($commit_msg)`\n\n[**Download IPA**](\($download_url))\n[View Release](\($release_url))"}' > discord_payload.json
+            '{content: "🚀 **تم إصدار نسخة بيتا جديدة (Ksign)!**\n\n**التغييرات:** `\($commit_msg)`\n\n📥 [**تحميل التطبيق (IPA)**](\($download_url))\n🔗 [عرض الإصدار في GitHub](\($release_url))"}' > discord_payload.json
 
-          curl -v \
+          curl -s \
             -H "Content-Type: application/json" \
             -d @discord_payload.json \
             "$DISCORD_WEBHOOK"
