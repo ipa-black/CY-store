@@ -65,7 +65,7 @@ jobs:
             s/Text\(app\.name\)/Text\(app.name \?\? "تطبيق غير معروف"\)/g;
           ' {} +
 
-          # 4. 💡 Comprehensive Dummy Polyfill for iOS 18 Background Tasks
+          # 4. 💡 Comprehensive Dummy Polyfill for iOS 18 Background Tasks (FIXED)
           BG_FILE="Feather/Utilities/BackgroundTaskManager.swift"
           if [ -f "$BG_FILE" ]; then
             cat << 'EOF' > temp_bg.swift
@@ -83,13 +83,13 @@ jobs:
               var progress = DummyProgress()
               var title: String = ""
               func updateTitle(_ title: String, subtitle: String) {}
-              func setTaskCompleted(success: Bool) {}
+              override func setTaskCompleted(success: Bool) {} // تم إضافة override هنا لحل الخطأ الأول
           }
           
           fileprivate class BGContinuedProcessingTaskRequest: BGTaskRequest {
               var strategy: DummyStrategy = .queue
               init(identifier: String, title: String, subtitle: DummyLocal) {
-                  super.init(identifier: identifier)
+                  super.init() // تم إزالة المعاملات من هنا لحل الخطأ الثاني
               }
           }
           EOF
