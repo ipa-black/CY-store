@@ -41,7 +41,7 @@ jobs:
 
       - name: Fast Modify & Patch (Ksign Info & All Compatibility Fixes)
         run: |
-          # 1. تعديل الاسم والحزمة إلى Ksign
+          # 1. Modify App Info
           INFO_PLIST_PATH="Feather/Resources/Info.plist"
           if [ -f "$INFO_PLIST_PATH" ]; then
             plutil -replace CFBundleDisplayName -string "Ksign" "$INFO_PLIST_PATH" || true
@@ -50,14 +50,14 @@ jobs:
             plutil -replace MinimumOSVersion -string "15.0" "$INFO_PLIST_PATH" || true
           fi
 
-          # 2. إجبار البناء على iOS 15 والتزامن الآمن
+          # 2. Force iOS 15 Target and Safe Concurrency
           find . -name "project.pbxproj" -exec sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = [0-9]*\.[0-9]*;/IPHONEOS_DEPLOYMENT_TARGET = 15.0; SWIFT_VERSION = 5.0; SWIFT_STRICT_CONCURRENCY = minimal;/g' {} +
 
           if [ -f "Makefile" ]; then
             sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET=15.0;/IPHONEOS_DEPLOYMENT_TARGET=15.0 SWIFT_VERSION=5.0 SWIFT_STRICT_CONCURRENCY=minimal;/g' Makefile
           fi
 
-          # 3. ترقيع الواجهات وأخطاء المتغيرات
+          # 3. Patch UI and Variable Errors
           find . -name "*.swift" -type f -exec perl -pi -e '
             s/\.rect\(cornerRadius:\s*([^,]+),\s*style:\s*\.([^)]+)\)/RoundedRectangle(cornerRadius: $1, style: .$2)/g;
             s/\.glassEffect\([^,]+,\s*in:/ \.background(Color.secondary.opacity(0.2), in:/g;             s/\.glassEffect\(\)/\.background(Color.secondary.opacity(0.2))/g;
@@ -65,16 +65,32 @@ jobs:
             s/Text\(app\.name\)/Text\(app.name \?\? "تطبيق غير معروف"\)/g;
           ' {} +
 
-          # 4. 💡 الحل الجذري الأخير: حقن أكواد وهمية لإصلاح مشكلة مهام الخلفية لـ iOS 18
+          # 4. 💡 Comprehensive Dummy Polyfill for iOS 18 Background Tasks
           BG_FILE="Feather/Utilities/BackgroundTaskManager.swift"
           if [ -f "$BG_FILE" ]; then
             cat << 'EOF' > temp_bg.swift
+          import BackgroundTasks
+          
           fileprivate enum DummyStrategy { case queue }
           fileprivate struct DummyLocal { static func localized(_ key: String) -> DummyLocal { return DummyLocal() } }
-          fileprivate class BGContinuedProcessingTask {}
-          fileprivate class BGContinuedProcessingTaskRequest {
+          
+          fileprivate class DummyProgress {
+              var completedUnitCount: Int64 = 0
+              var totalUnitCount: Int64 = 0
+          }
+          
+          fileprivate class BGContinuedProcessingTask: BGTask {
+              var progress = DummyProgress()
+              var title: String = ""
+              func updateTitle(_ title: String, subtitle: String) {}
+              func setTaskCompleted(success: Bool) {}
+          }
+          
+          fileprivate class BGContinuedProcessingTaskRequest: BGTaskRequest {
               var strategy: DummyStrategy = .queue
-              init(identifier: String, title: String, subtitle: DummyLocal) {}
+              init(identifier: String, title: String, subtitle: DummyLocal) {
+                  super.init(identifier: identifier)
+              }
           }
           EOF
             cat "$BG_FILE" >> temp_bg.swift
