@@ -65,37 +65,16 @@ jobs:
             s/Text\(app\.name\)/Text\(app.name \?\? "تطبيق غير معروف"\)/g;
           ' {} +
 
-          # 4. 💡 Comprehensive Dummy Polyfill for iOS 18 Background Tasks (FIXED)
-          BG_FILE="Feather/Utilities/BackgroundTaskManager.swift"
-          if [ -f "$BG_FILE" ]; then
-            cat << 'EOF' > temp_bg.swift
-          import BackgroundTasks
-          
-          fileprivate enum DummyStrategy { case queue }
-          fileprivate struct DummyLocal { static func localized(_ key: String) -> DummyLocal { return DummyLocal() } }
-          
-          fileprivate class DummyProgress {
-              var completedUnitCount: Int64 = 0
-              var totalUnitCount: Int64 = 0
-          }
-          
-          fileprivate class BGContinuedProcessingTask: BGTask {
-              var progress = DummyProgress()
-              var title: String = ""
-              func updateTitle(_ title: String, subtitle: String) {}
-              override func setTaskCompleted(success: Bool) {} // تم إضافة override هنا لحل الخطأ الأول
-          }
-          
-          fileprivate class BGContinuedProcessingTaskRequest: BGTaskRequest {
-              var strategy: DummyStrategy = .queue
-              init(identifier: String, title: String, subtitle: DummyLocal) {
-                  super.init() // تم إزالة المعاملات من هنا لحل الخطأ الثاني
-              }
-          }
-          EOF
-            cat "$BG_FILE" >> temp_bg.swift
-            mv temp_bg.swift "$BG_FILE"
-          fi
+          # 4. 💡 الحل الجذري والأنظف لمشكلة مهام الخلفية
+          # تحويل كود iOS 18 إلى كود iOS 13+ مدعوم رسمياً من أبل وإزالة التحديثات الوهمية
+          find . -name "BackgroundTaskManager.swift" -type f -exec perl -pi -e '
+            s/BGContinuedProcessingTaskRequest/BGProcessingTaskRequest/g;
+            s/BGContinuedProcessingTask/BGProcessingTask/g;
+            s/(BGProcessingTaskRequest\(identifier:\s*[^,]+),\s*title:\s*[^,]+,\s*subtitle:\s*[^)]+\)/$1)/g;
+            s/.*request\.strategy\s*=\s*\.queue.*//g;
+            s/.*task\.progress\..*//g;
+            s/.*task\.updateTitle.*//g;
+          ' {} +
 
       - name: Build Ksign IPA
         run: |
