@@ -6,7 +6,7 @@ on:
       - 'v*'
   workflow_dispatch:
 
-# 🔥 الحل الجذري والذكي: إلغاء أي بناء قديم معلق تلقائياً بمجرد إطلاق بناء جديد لتفريغ السيرفر فوراً
+# 🔥 الحل الجذري والذكي: إلغاء أي بناء قديم معلق تلقائياً
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -16,19 +16,19 @@ permissions:
 
 jobs:
   build:
-    # استخدام سيرفر مخصص ومستقر لتقليل وقت الانتظار في الطوابير العامة
-    runs-on: macos-13
+    # 🚀 الترقية إلى macos-14 لاستخدام معالجات Apple Silicon (M1) لتسريع البناء بشكل مضاعف
+    runs-on: macos-14
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: 'true'
-          fetch-depth: 1 # جلب النسخة السطحية السريعة لتوفير وقت التحميل
+          fetch-depth: 1 # جلب النسخة السطحية السريعة
 
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '15.2' # إصدار ثابت ومثبت مسبقاً لتفادي تضييع الوقت في البحث
+          xcode-version: '15.2'
 
       - name: Compile CY STORE
         run: | 
@@ -55,12 +55,16 @@ jobs:
           mkdir upload
           mv packages/* upload/
 
-      - name: Extract Version
+      - name: Determine Version
         id: get_version
         run: |
-          DATE_STR=$(date +'%Y.%m.%d')
-          VERSION="v${DATE_STR}"
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
+          # 💡 ذكاء التسمية: إذا تم البناء من Tag معين (مثلا v1.2) استخدمه، وإذا كان يدوياً استخدم التاريخ
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          else
+            DATE_STR=$(date +'%Y.%m.%d')
+            echo "VERSION=v${DATE_STR}" >> $GITHUB_ENV
+          fi
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -70,7 +74,7 @@ jobs:
           target_commitish: ${{ github.sha }}
           files: |
             upload/*
-          generate_release_notes: false
-          draft: true
+          generate_release_notes: true # 🔥 إنشاء تفاصيل التحديثات تلقائياً من الـ Commits (احترافي)
+          draft: false # 💡 تم تغييره إلى false ليتم النشر مباشرة للجمهور بدلاً من بقائه كمسودة
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
