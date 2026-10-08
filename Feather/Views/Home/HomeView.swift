@@ -3,7 +3,7 @@
 //  CY STORE
 //
 //  Created by samara on 13.05.2026.
-//  Modified for CY STORE - Safe Native Banners & Auto-Scroll.
+//  Modified for CY STORE - App Store Native Design.
 //
 
 import SwiftUI
@@ -34,6 +34,10 @@ struct HomeView: View {
     var body: some View {
         NBNavigationView("الرئيسية") {
             ZStack {
+                // خلفية بيضاء/سوداء نقية لتطابق App Store بدلاً من رمادي الـ List
+                Color(uiColor: .systemBackground)
+                    .ignoresSafeArea()
+                
                 if isLoading && _recentApps.isEmpty && _banners.isEmpty {
                     ProgressView("جاري التحديث...")
                 } else if _recentApps.isEmpty && _banners.isEmpty {
@@ -48,10 +52,11 @@ struct HomeView: View {
                             .foregroundColor(.secondary)
                     }
                 } else {
-                    List {
-                        // MARK: - قسم البنرات الإعلانية (من ipa-black فقط)
-                        if !_banners.isEmpty {
-                            Section {
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(spacing: 28) {
+                            
+                            // MARK: - قسم البنرات الإعلانية (App Store Featured Cards)
+                            if !_banners.isEmpty {
                                 TabView(selection: $_currentBannerIndex) {
                                     ForEach(_banners.indices, id: \.self) { index in
                                         let banner = _banners[index]
@@ -80,20 +85,19 @@ struct HomeView: View {
                                                             .overlay(ProgressView())
                                                     }
                                                 }
-                                                .frame(height: 190)
-                                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                                                .padding(.horizontal, 16)
+                                                .frame(maxWidth: .infinity)
+                                                .frame(height: 260) // ارتفاع أكبر ليطابق بطاقات أبل
+                                                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                                                .shadow(color: Color.black.opacity(0.15), radius: 10, x: 0, y: 5)
+                                                .padding(.horizontal, 20)
                                             }
                                         }
                                         .buttonStyle(.plain)
                                         .tag(index)
                                     }
                                 }
-                                .frame(height: 230)
+                                .frame(height: 300) // توفير مساحة لمؤشر الصفحات (Page Control) والظل
                                 .tabViewStyle(.page(indexDisplayMode: .always))
-                                .listRowInsets(EdgeInsets())
-                                .listRowBackground(Color.clear)
-                                .listRowSeparator(.hidden)
                                 .onReceive(bannerTimer) { _ in
                                     if !_banners.isEmpty {
                                         withAnimation(.easeInOut(duration: 0.5)) {
@@ -102,46 +106,67 @@ struct HomeView: View {
                                     }
                                 }
                             }
-                        }
 
-                        // MARK: - قسم أحدث التطبيقات فرز حسب الإضافة مع العدد
-                        if !_recentApps.isEmpty {
-                            Section {
-                                ForEach(_recentApps, id: \.app.currentUniqueId) { item in
-                                    Button {
-                                        _selectedRoute = SourceAppRoute(source: item.source, app: item.app)
-                                    } label: {
-                                        SourceAppsCellView(source: item.source, app: item.app)
+                            // MARK: - قسم أحدث التطبيقات (App Store Vertical List)
+                            if !_recentApps.isEmpty {
+                                VStack(spacing: 16) {
+                                    // ترويسة القسم بتصميم App Store
+                                    HStack(alignment: .lastTextBaseline) {
+                                        Text("أحدث الإضافات")
+                                            .font(.title2)
+                                            .fontWeight(.bold)
+                                            .foregroundColor(.primary)
+                                        
+                                        Spacer()
+                                        
+                                        Text("\(_recentAppsCount) تطبيق")
+                                            .font(.subheadline)
+                                            .fontWeight(.semibold)
+                                            .foregroundColor(.accentColor)
+                                            .padding(.horizontal, 10)
+                                            .padding(.vertical, 4)
+                                            .background(Color.accentColor.opacity(0.1))
+                                            .clipShape(Capsule())
                                     }
-                                    .buttonStyle(.plain)
-                                }
-                            } header: {
-                                HStack(spacing: 6) {
-                                    Text("أحدث الإضافات")
-                                        .font(.title3.bold())
-                                        .foregroundColor(.primary)
+                                    .padding(.horizontal, 20)
                                     
-                                    Text("\(_recentAppsCount)")
-                                        .font(.system(size: 14, weight: .bold, design: .rounded))
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 2)
-                                        .background(Color.accentColor.opacity(0.15))
-                                        .foregroundColor(.accentColor)
-                                        .clipShape(Capsule())
+                                    // قائمة التطبيقات
+                                    LazyVStack(spacing: 0) {
+                                        ForEach(Array(_recentApps.enumerated()), id: \.element.app.currentUniqueId) { index, item in
+                                            Button {
+                                                _selectedRoute = SourceAppRoute(source: item.source, app: item.app)
+                                            } label: {
+                                                VStack(spacing: 0) {
+                                                    SourceAppsCellView(source: item.source, app: item.app)
+                                                        .padding(.vertical, 12)
+                                                        .padding(.horizontal, 20)
+                                                    
+                                                    // خط فاصل بين التطبيقات (بدون خط في آخر عنصر)
+                                                    if index < _recentApps.count - 1 {
+                                                        Divider()
+                                                            .padding(.leading, 85) // إزاحة الخط الفاصل ليبدأ بعد أيقونة التطبيق (حسب مقاس SourceAppsCellView)
+                                                    }
+                                                }
+                                                // تأثير ضغطة الزر مثل App Store
+                                                .contentShape(Rectangle())
+                                            }
+                                            .buttonStyle(AppStoreButtonStyle())
+                                        }
+                                    }
                                 }
-                                .padding(.top, 5)
-                                .textCase(nil)
                             }
+                            
+                            // مسافة سفلية للتنفس
+                            Spacer(minLength: 40)
                         }
+                        .padding(.top, 10)
                     }
-                    .listStyle(.insetGrouped)
                 }
             }
             .compatNavigationDestination(item: $_selectedRoute) { route in
                 SourceAppsDetailView(source: route.source, app: route.app)
             }
             .refreshable {
-                // محاولة الجلب وفي حال حدوث خطأ في سورس خارجي لا يتوقف البرنامج
                 do {
                     await viewModel.fetchSources(_sources, refresh: true)
                 } catch {
@@ -160,7 +185,7 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - جلب البيانات الآمن (تصفية وفرز جذري لمنع الـ Parse Error)
+    // MARK: - جلب البيانات الآمن
     private func _loadData() {
         isLoading = true
         Task {
@@ -171,13 +196,11 @@ struct HomeView: View {
             var allBanners: [ASRepository.News] = []
 
             for source in loadedSources {
-                // حماية 1: قراءة التطبيقات بشكل مستقل لكل سورس على حدة لضمان عدم تأثر السورسات ببعضها
                 let sourceApps = source.apps
                 for app in sourceApps {
                     allApps.append((source: source, app: app))
                 }
                 
-                // حماية 2: عزل وقراءة بنرات ipa-black فقط بشكل صارم وآمن
                 if let matchedRawSource = rawSources.first(where: { viewModel.sources[$0]?.identifier == source.identifier }),
                    let sourceURLString = matchedRawSource.sourceURL?.absoluteString.lowercased() {
                     
@@ -189,7 +212,6 @@ struct HomeView: View {
                 }
             }
 
-            // فرز زمني دقيق تصاعدياً حسب الأحدث
             allApps.sort { firstItem, secondItem in
                 let firstDate = firstItem.app.currentDate?.date ?? .distantPast
                 let secondDate = secondItem.app.currentDate?.date ?? .distantPast
@@ -214,11 +236,19 @@ struct HomeView: View {
     }
 }
 
-// MARK: - Supporting Types
+// MARK: - Supporting Types & Styles
 struct SourceAppRoute: Identifiable, Hashable {
     let source: ASRepository
     let app: ASRepository.App
     let id: String = UUID().uuidString
+}
+
+// أسلوب ضغطة زر يحاكي التلاشي الخفيف في متجر أبل عند لمس الخلايا
+struct AppStoreButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(configuration.isPressed ? Color(uiColor: .systemGray5).opacity(0.5) : Color.clear)
+    }
 }
 
 // MARK: - Extension for Navigation
